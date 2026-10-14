@@ -27,7 +27,7 @@ public sealed class ClassificadorArquivosTests
         Assert.HasCount(0, resultado.Evidencias);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("rascunho.tmp")]
     [DataRow("COPIA.BAK")]
     [DataRow("semanal.backup")]
@@ -42,7 +42,7 @@ public sealed class ClassificadorArquivosTests
         StringAssert.Contains(resultado.Evidencias[0].Justificativa, "indício");
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("relatorio_tmp.txt")]
     [DataRow("backup_planejado.docx")]
     [DataRow("relatorio.tmpx")]
