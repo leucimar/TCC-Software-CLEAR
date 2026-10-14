@@ -1,4 +1,5 @@
 using Clear.Application.Inventario;
+using Clear.Domain.Analise;
 using Clear.Infrastructure.Inventario;
 
 namespace Clear.Desktop;
@@ -28,6 +29,21 @@ public partial class Form1 : Form
         HorizontalScrollbar = true
     };
 
+    private readonly CheckBox _ativarSinalTemporal = new()
+    {
+        Text = "Sinal temporal (opcional): última modificação há mais de",
+        AutoSize = true,
+        Checked = false
+    };
+    private readonly NumericUpDown _diasSemModificacao = new()
+    {
+        Minimum = 30,
+        Maximum = 3650,
+        Value = 365,
+        Width = 85,
+        Enabled = false
+    };
+
     private CancellationTokenSource? _cancelamento;
 
     public Form1()
@@ -38,7 +54,7 @@ public partial class Form1 : Form
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Inventário e classificação (M3 parcial)";
+        Text = "CLEAR — Inventário e classificação (M3: sinais temporais)";
         MinimumSize = new Size(840, 520);
         Size = new Size(1120, 750);
 
@@ -49,13 +65,16 @@ public partial class Form1 : Form
             RowCount = 5,
             Padding = new Padding(12)
         };
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
         principal.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
 
-        var topo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4 };
+        var topo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3 };
+        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
+        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 122));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 195));
@@ -71,6 +90,26 @@ public partial class Form1 : Form
             AutoSize = true
         }, 0, 0);
         topo.SetColumnSpan(topo.GetControlFromPosition(0, 0)!, 4);
+
+        var parametrosTemporais = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true
+        };
+        parametrosTemporais.Controls.Add(_ativarSinalTemporal);
+        parametrosTemporais.Controls.Add(_diasSemModificacao);
+        parametrosTemporais.Controls.Add(new Label
+        {
+            Text = "dias — só indício, sem exclusão",
+            AutoSize = true,
+            Padding = new Padding(0, 5, 0, 0)
+        });
+        topo.Controls.Add(parametrosTemporais, 0, 2);
+        topo.SetColumnSpan(parametrosTemporais, 4);
+        _ativarSinalTemporal.CheckedChanged += (_, _) =>
+            _diasSemModificacao.Enabled = _ativarSinalTemporal.Checked && _cancelamento is null;
 
         _resumo.Text = "Nenhum inventário executado.";
         _resumo.Padding = new Padding(0, 12, 0, 0);
@@ -132,8 +171,18 @@ public partial class Form1 : Form
             return;
         }
 
+        // Política capturada uma única vez por execução; não muda durante a varredura.
+        var usarSinalTemporal = _ativarSinalTemporal.Checked;
+        var diasSelecionados = (int)_diasSemModificacao.Value;
+        var referenciaUtc = DateTimeOffset.UtcNow;
+        var classificador = usarSinalTemporal
+            ? ClassificadorArquivos.CriarComSinalTemporal(diasSelecionados, referenciaUtc)
+            : new ClassificadorArquivos();
+
         _cancelamento = new CancellationTokenSource();
         var token = _cancelamento.Token;
+        _ativarSinalTemporal.Enabled = false;
+        _diasSemModificacao.Enabled = false;
         _selecionar.Enabled = false;
         _iniciar.Enabled = false;
         _cancelar.Enabled = true;
@@ -149,7 +198,7 @@ public partial class Form1 : Form
         try
         {
             var fonte = new FonteInventarioSistemaArquivos();
-            var casoDeUso = new InventariarDiretorio(fonte, limiteAmostra: 1000);
+            var casoDeUso = new InventariarDiretorio(fonte, limiteAmostra: 1000, classificador: classificador);
 
             // Executa a leitura fora da thread gráfica para não bloquear os botões.
             var resultado = await Task.Run(
@@ -178,9 +227,12 @@ public partial class Form1 : Form
 
             var categorias = string.Join(" | ", resultado.ContagensCategoria.Select(c =>
                 $"{c.Categoria}: {c.QuantidadeArquivos:N0}"));
-            _estado.Text = categorias.Length == 0
-                ? "Nenhum indício pelas regras atuais. Nenhum arquivo alterado."
-                : categorias + " | Apenas indícios, sem alterações nos arquivos.";
+            var criterio = usarSinalTemporal
+                ? $" | análise temporal ativa: mais de {diasSelecionados} dias"
+                : " | análise temporal desativada";
+            _estado.Text = (categorias.Length == 0
+                ? "Nenhum indício pelas regras atuais."
+                : categorias) + criterio + " | Nenhum arquivo alterado.";
         }
         catch (OperationCanceledException)
         {
@@ -198,6 +250,8 @@ public partial class Form1 : Form
         {
             _cancelamento.Dispose();
             _cancelamento = null;
+            _ativarSinalTemporal.Enabled = true;
+            _diasSemModificacao.Enabled = _ativarSinalTemporal.Checked;
             _selecionar.Enabled = true;
             _iniciar.Enabled = true;
             _cancelar.Enabled = false;
