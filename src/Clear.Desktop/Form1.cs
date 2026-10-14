@@ -3,7 +3,7 @@ using Clear.Infrastructure.Inventario;
 
 namespace Clear.Desktop;
 
-/// <summary>Interface mínima de inventário do M2; nenhuma operação modifica arquivos.</summary>
+/// <summary>Inventário e classificação inicial do M3; nenhuma operação modifica arquivos.</summary>
 public partial class Form1 : Form
 {
     private readonly TextBox _caminho = new() { Dock = DockStyle.Fill, ReadOnly = true };
@@ -38,7 +38,7 @@ public partial class Form1 : Form
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Inventário de arquivos (M2)";
+        Text = "CLEAR — Inventário e classificação (M3 parcial)";
         MinimumSize = new Size(840, 520);
         Size = new Size(1120, 750);
 
@@ -66,7 +66,7 @@ public partial class Form1 : Form
         topo.Controls.Add(_cancelar, 3, 1);
         topo.Controls.Add(new Label
         {
-            Text = "Selecione uma pasta de teste. Não há cópia, alteração nem exclusão de arquivos.",
+            Text = "Pasta de teste: indícios não significam descarte. Nenhum arquivo será modificado.",
             Dock = DockStyle.Fill,
             AutoSize = true
         }, 0, 0);
@@ -155,13 +155,15 @@ public partial class Form1 : Form
             var resultado = await Task.Run(
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
 
-            _grade.DataSource = resultado.AmostraArquivos
-                .Select(a => new
+            _grade.DataSource = resultado.ClassificacoesAmostra
+                .Select(r => new
                 {
-                    Caminho = a.CaminhoCompleto,
-                    Bytes = a.TamanhoBytes,
-                    ModificadoEmUtc = a.UltimaModificacaoUtc,
-                    AcessadoEmUtc = a.UltimoAcessoUtc
+                    Caminho = r.Arquivo.CaminhoCompleto,
+                    Bytes = r.Arquivo.TamanhoBytes,
+                    Categorias = string.Join(", ", r.Categorias),
+                    Justificativas = string.Join(" | ", r.Evidencias.Select(e => e.Justificativa)),
+                    ModificadoEmUtc = r.Arquivo.UltimaModificacaoUtc,
+                    AcessadoEmUtc = r.Arquivo.UltimoAcessoUtc
                 }).ToList();
 
             foreach (var item in resultado.Ocorrencias)
@@ -171,8 +173,14 @@ public partial class Form1 : Form
             var exibicao = resultado.AmostraLimitada ? " | exibindo os primeiros 1.000 arquivos" : "";
             _resumo.Text =
                 $"{resultado.QuantidadeArquivos:N0} arquivo(s) | {resultado.TotalBytes:N0} bytes" +
+                $" | {resultado.ArquivosComIndicios:N0} arquivo(s) com indícios" +
                 $" | {resultado.TotalOcorrencias:N0} ocorrência(s){parcial}{exibicao}";
-            _estado.Text = "Inventário concluído. Nenhum arquivo foi modificado pelo CLEAR.";
+
+            var categorias = string.Join(" | ", resultado.ContagensCategoria.Select(c =>
+                $"{c.Categoria}: {c.QuantidadeArquivos:N0}"));
+            _estado.Text = categorias.Length == 0
+                ? "Nenhum indício pelas regras atuais. Nenhum arquivo alterado."
+                : categorias + " | Apenas indícios, sem alterações nos arquivos.";
         }
         catch (OperationCanceledException)
         {
