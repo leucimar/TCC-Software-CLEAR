@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Clear.Application/Clear.Application.csproj" />
+    <Project Path="src/Clear.Desktop/Clear.Desktop.csproj" />
+    <Project Path="src/Clear.Domain/Clear.Domain.csproj" />
+    <Project Path="src/Clear.Infrastructure/Clear.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Clear.Domain.Tests/Clear.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
