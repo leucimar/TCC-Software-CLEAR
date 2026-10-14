@@ -1,28 +1,36 @@
-# TCC-Software-CLEAR
+# CLEAR — TCC
 
-Aplicativo desktop C#/.NET voltado à avaliação e ao saneamento **assistido** de arquivos antes de migrações para a nuvem. Desenvolvido para o TCC de Ciência da Computação.
+Aplicativo desktop em C#/.NET 10 para avaliação e saneamento **assistido** de arquivos antes de migrações para a nuvem. O software **não** migra arquivos e **não** executa ações destrutivas automaticamente.
 
-## Tecnologias e estrutura
+## Tecnologia e arquitetura
 
-- .NET 10 LTS (SDK 10.0.402 fixado em `global.json`), C# e Windows Forms;
-- MSTest para testes de domínio e aplicação;
-- Arquitetura Clean Architecture simplificada com projetos `Clear.Domain`, `Clear.Application`, `Clear.Infrastructure` e `Clear.Desktop`.
+- .NET 10 LTS, SDK 10.0.402 fixado no global.json;
+- Windows Forms para interface gráfica;
+- Clean Architecture simplificada: Clear.Domain, Clear.Application, Clear.Infrastructure, Clear.Desktop;
+- MSTest para testes unitários e de integração com arquivos sintéticos;
+- Git/GitHub para versionamento.
 
-## Compilar e testar
+## Marco atual: M2 — inventário de metadados
 
-```powershell
-dotnet build CLEAR.slnx -c Release
-dotnet test CLEAR.slnx -c Release
-```
+A interface permite escolher **manualmente** uma pasta, varrer seus arquivos e subpastas, visualizar até 1.000 entradas e acompanhar contagem total de arquivos/bytes. Problemas de leitura e links/junctions ignorados são relatados; a listagem de ocorrências é limitada a 100 detalhes para controlar uso de memória.
 
-## Estado
+**Somente leitura:** o CLEAR consulta metadados, sem abrir conteúdo de documentos, editar, mover, copiar ou excluir. Não segue links/junctions/reparse points identificados. Não há SQLite, classificação automática, deduplicação nem quarentena neste marco.
 
-**M1 — Núcleo inicial publicado, aguardando validação local.**
+A interface deve ser testada **somente com diretórios sintéticos**, não com dados de produção.
 
-Inclui representação de metadados de arquivos, evidências de análise multirrótulo e um caso de uso que resume uma fonte **simulada** de inventário por meio de contrato injetado. Não há varredura de disco nem classificação automática. A interface gráfica permanece inicial.
+## Compilação e testes
 
-Mais detalhes em `docs/architecture/Marco_M1.md`.
+Execute na raiz da solução:
 
-## Restrições
+~~~powershell
+dotnet restore CLEAR.slnx
+dotnet build CLEAR.slnx -c Release --no-restore
+dotnet test CLEAR.slnx -c Release --no-build --no-restore
+dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
+~~~
 
-O CLEAR não migra arquivos para a nuvem. Nenhuma categoria autoriza exclusão ou movimentação automática. Quarentena e rollback dependerão de aprovação humana, implementação e testes específicos.
+Consulte docs/architecture/Marco_M2.md e docs/tests/Roteiro_Validacao_M2.md antes de testar.
+
+## Estado da validação
+
+Implementação publicada em branch de trabalho, **pendente de compilação e testes locais do autor**. Não confundir testes definidos no código com testes executados e aprovados.
