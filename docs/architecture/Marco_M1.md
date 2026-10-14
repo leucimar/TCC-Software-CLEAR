@@ -1,6 +1,6 @@
 # Marco M1 — Modelos de domínio e contrato de inventário
 
-**Situação:** implementação publicada, aguardando compilação e teste local pelo autor.
+**Situação:** implementação publicada na branch `feature/bootstrap-solution`; correção de avisos pendente de validação local. Sem merge.
 
 ## Componentes
 
@@ -8,25 +8,34 @@
 - `CategoriaAnalise`, `EvidenciaAnalise` e `ResultadoAnaliseArquivo`: representação explicável de múltiplas categorias; nenhuma categoria autoriza descarte.
 - `IFonteInventario`: contrato assíncrono somente leitura; implementação para filesystem fica para M2.
 - `ResumirInventario`: totaliza quantidade e bytes de fonte injetada, com cancelamento e proteção contra overflow.
-- Testes MSTest: **13 testes propostos** (7 de domínio e 6 de aplicação), usando somente objetos sintéticos em memória.
+- MSTest: sete testes de domínio e seis de aplicação, com objetos sintéticos em memória.
 
 ## Decisões
 
-A injeção de dependência é feita pelo construtor; não foi adicionado contêiner ou NuGet novo. Os projetos mantêm as dependências existentes. Não há leitura real de diretórios, classificação automática, SQLite, quarentena nem rollback. O teste vazio do template foi substituído.
+A injeção de dependência é feita pelo construtor; não foi adicionado contêiner nem novo pacote NuGet. Não há leitura real de diretórios, classificação automática, SQLite, quarentena nem rollback. O teste vazio do bootstrap foi substituído por testes reais.
 
-## Validação no notebook
+## Evidência de validação — notebook Windows 11
+
+Em 14/10/2026, o autor enviou capturas de tela comprovando:
+- `git pull --ff-only` na branch `feature/bootstrap-solution` até o commit `d811d59`;
+- `dotnet restore CLEAR.slnx` bem-sucedido;
+- `dotnet build CLEAR.slnx -c Release --no-restore`: cinco projetos compilados, quatro avisos MSTest;
+- `dotnet test CLEAR.slnx -c Release --no-build --no-restore`: **13 testes aprovados, 0 falhas**.
+
+Os avisos observados foram MSTEST0037 (três ocorrências no projeto Domain.Tests) e MSTEST0001 (uma no Application.Tests). Foi preparada uma alteração posterior que substitui comparações de quantidades por `Assert.HasCount` e explicita paralelização no segundo projeto de testes. **A ausência de avisos após a correção ainda não foi comprovada.**
+
+## Nova validação solicitada
+
+No notebook, após conferir `git status --short`, executar:
 
 ```powershell
-git status --short
 git fetch origin
 git switch feature/bootstrap-solution
 git pull --ff-only
-dotnet --version
-dotnet restore CLEAR.slnx
-dotnet build CLEAR.slnx -c Release --no-restore
+dotnet build CLEAR.slnx -c Release
 dotnet test CLEAR.slnx -c Release --no-build --no-restore
 ```
 
-Esperados: .NET SDK 10.0.402, build bem-sucedido e 13 testes aprovados. **Não são resultados observados**: dependem da execução local.
+Esperado: 13 testes aprovados e ausência dos quatro avisos anteriores. Não declarar sucesso antecipadamente.
 
-No próximo marco (M2) poderá ser adicionada a leitura somente leitura do filesystem, com política explícita para symlinks, permissões, arquivos mutáveis e falhas parciais. Os critérios de segurança deverão ser aprovados antes dessa implementação.
+No M2 poderá ser adicionada uma fonte de leitura real do filesystem somente após aprovação dos critérios relativos a permissões, links simbólicos/junctions, arquivos mutáveis e falhas parciais.

@@ -47,7 +47,7 @@ public sealed class ModeloDominioTests
                 new EvidenciaAnalise(CategoriaAnalise.CopiaBackupOuTemporario, "Nome suspeito.")
             });
 
-        Assert.AreEqual(2, resultado.Categorias.Count);
+        Assert.HasCount(2, resultado.Categorias);
         CollectionAssert.Contains(resultado.Categorias.ToArray(), CategoriaAnalise.ArquivoVazio);
         CollectionAssert.Contains(resultado.Categorias.ToArray(), CategoriaAnalise.CopiaBackupOuTemporario);
     }
@@ -64,8 +64,8 @@ public sealed class ModeloDominioTests
             new ArquivoInventariado(@"C:\Dados\arquivo.txt", 20), evidencias);
         evidencias.Clear();
 
-        Assert.AreEqual(2, resultado.Evidencias.Count);
-        Assert.AreEqual(1, resultado.Categorias.Count);
+        Assert.HasCount(2, resultado.Evidencias);
+        Assert.HasCount(1, resultado.Categorias);
     }
 
     [TestMethod]
