@@ -1,41 +1,28 @@
 # TCC-Software-CLEAR
 
-Aplicativo desktop desenvolvido em C#/.NET para avaliação, categorização e saneamento assistido de arquivos, antes de processos de migração para ambientes em nuvem.
+Aplicativo desktop C#/.NET voltado à avaliação e ao saneamento **assistido** de arquivos antes de migrações para a nuvem. Desenvolvido para o TCC de Ciência da Computação.
 
-Projeto desenvolvido como parte do TCC de Ciência da Computação.
+## Tecnologias e estrutura
 
-## Tecnologias
+- .NET 10 LTS (SDK 10.0.402 fixado em `global.json`), C# e Windows Forms;
+- MSTest para testes de domínio e aplicação;
+- Arquitetura Clean Architecture simplificada com projetos `Clear.Domain`, `Clear.Application`, `Clear.Infrastructure` e `Clear.Desktop`.
 
-- C# e .NET 10 LTS
-- Windows Forms
-- MSTest para testes automatizados
-- Git e GitHub para versionamento
+## Compilar e testar
 
-## Arquitetura
+```powershell
+dotnet build CLEAR.slnx -c Release
+dotnet test CLEAR.slnx -c Release
+```
 
-O projeto utiliza Clean Architecture simplificada, com quatro camadas:
+## Estado
 
-- **Clear.Domain:** entidades, regras e contratos essenciais.
-- **Clear.Application:** casos de uso e coordenação das operações.
-- **Clear.Infrastructure:** acesso ao sistema de arquivos e persistência.
-- **Clear.Desktop:** interface gráfica Windows Forms.
+**M1 — Núcleo inicial publicado, aguardando validação local.**
 
-## Compilação e testes
+Inclui representação de metadados de arquivos, evidências de análise multirrótulo e um caso de uso que resume uma fonte **simulada** de inventário por meio de contrato injetado. Não há varredura de disco nem classificação automática. A interface gráfica permanece inicial.
 
-Compilar a solução:
-
-`dotnet build CLEAR.slnx -c Release`
-
-Executar os testes:
-
-`dotnet test CLEAR.slnx -c Release`
-
-## Estado atual
-
-**Marco M0 — Bootstrap inicial.**
-
-A estrutura da solução foi criada e validada. As funcionalidades de análise, classificação, quarentena e rollback ainda não foram implementadas.
+Mais detalhes em `docs/architecture/Marco_M1.md`.
 
 ## Restrições
 
-O CLEAR não realiza migração de arquivos para a nuvem. Operações modificadoras dependerão de seleção e confirmação explícitas do usuário.
+O CLEAR não migra arquivos para a nuvem. Nenhuma categoria autoriza exclusão ou movimentação automática. Quarentena e rollback dependerão de aprovação humana, implementação e testes específicos.
