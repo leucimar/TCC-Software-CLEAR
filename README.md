@@ -1,45 +1,34 @@
 # CLEAR — TCC
 
-Aplicativo desktop gratuito em C#/.NET 10 para **avaliação e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. O CLEAR **não realiza migração**, nem descarta ou move arquivos.
+Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia nem descarta arquivos.**
 
-## Arquitetura e ferramentas
+## Tecnologias e arquitetura
 
-- C#/.NET 10 LTS (SDK 10.0.402 fixado em `global.json`);
-- Windows Forms; projetos Domain, Application, Infrastructure e Desktop;
-- MSTest e Git/GitHub, sem dependências pagas.
+- C#/.NET 10 LTS, SDK 10.0.402 (`global.json`);
+- Windows Forms e quatro camadas: Domain, Application, Infrastructure, Desktop;
+- MSTest; Git/GitHub, sem dependências pagas.
 
-## Funcionalidades validadas anteriormente
+## Capacidades
 
-- **M2:** inventário de arquivos e bytes, leitura apenas de metadados, cancelamento e registro de ocorrências;
-- **M3 Parte 1:** indícios de arquivo vazio e nomes temporários/backup;
-- **M3 Parte 2:** sinal temporal opt-in, com intervalo configurável e comparação de última modificação UTC.
+- M2: inventário de arquivos/bytes/erros/cancelamento;
+- M3 Parte 1: indícios de arquivos vazios e nomes temporários/backup;
+- M3 Parte 2: sinal temporal configurável e desativado por padrão;
+- M3 Parte 3A: inventário de subpastas, inclusive vazias, contratos para perfis e resultados;
+- **M3 Parte 3B (branch de testes):** verificações locais por ambiente exclusivo, sete checkboxes independentes e filtro opcional de tamanho personalizado.
 
-Essas categorias gerais são indícios, não conclusões de descarte. O programa não altera arquivos.
+### Perfil de destino
 
-## M3 — Parte 3A (branch de desenvolvimento)
+Escolha **um**: Azure Files clássico SMB em cliente Windows; SharePoint Online; ou OneDrive for Business. Escolha *Sem destino* para executar só os filtros gerais. OneDrive pessoal e Azure NFS ainda não são contemplados. As checkboxes das regras específicas podem ser ativadas/desativadas individualmente.
 
-**Base de compatibilidade, ainda sem validação local:**
+O catálogo `M3-3B-1` oferece:
+- Azure: pontuação proibida do nome e tamanho maior que 4 TiB;
+- SharePoint/OneDrive empresarial: pontuação proibida, espaço inicial/final, sequência `_vti_` e tamanho maior que 250 GiB (base binária).
 
-- Enumeração de **subpastas**, inclusive vazias, durante a mesma travessia que inventaria os arquivos. A pasta raiz selecionada não é contada. A interface mostra a quantidade de subpastas, mantendo a tabela de arquivos como antes;
-- Representação imutável de entrada de arquivo/diretório, sem atribuir tamanho lógico a diretórios;
-- Modelo de destino exclusivo: Azure Files clássico SMB **ou** SharePoint Online/OneDrive for Business; nenhum perfil também é permitido para apenas análise geral;
-- Catálogo **descritivo** das sete verificações previstas e seleção individual validada por destino;
-- Contratos para resultados de compatibilidade que distinguem incompatibilidade, alerta, não avaliado, sem incompatibilidade detectada, desabilitado e não aplicável;
-- Modelo independente de limite personalizado de tamanho: valor positivo em **bytes**, sinalização somente quando tamanho é **maior** que o limite.
+Os limites oficiais são imutáveis e não confundidos com o filtro operacional. O filtro pessoal aceita B, KiB, MiB, GiB e TiB, apenas quando marcado; identifica arquivos maiores que o valor informado, **mesmo quando válidos para o serviço**. Todos os resultados são hipóteses de pré-avaliação local: ausência de incompatibilidade documentada nas regras habilitadas **não equivale à garantia de migração**.
 
-**Não há, nesta Parte 3A, execução das sete regras, checkboxes de destino ou campo de tamanho na interface.** Essas integrações pertencem à Parte 3B. Nenhum perfil é selecionado automaticamente e nenhum resultado atual deve ser interpretado como certificação de compatibilidade.
+Pastas e arquivos são avaliados por nome; tamanho só se aplica a arquivos. Não há projeção de caminho remoto, verificação de quota, autenticação, Azure NFS, OneDrive pessoal, análise de conteúdo, hash, duplicatas, persistência ou ação destrutiva. Links/junctions conhecidos são ignorados. Até 1.000 entradas são exibidas, mas todas as entradas enumeradas são contabilizadas. Pastas sintéticas são obrigatórias para os testes do TCC.
 
-## Segurança e limitações
-
-- Apenas leitura de metadados, sem abrir conteúdo, renomear, editar, mover ou excluir;
-- Links simbólicos, junctions e reparse points identificados são ignorados;
-- Amostra de arquivos e de diretórios tem limite configurado para memória; contagens abrangem os itens enumerados;
-- Erros de enumeração podem resultar em inventário parcial;
-- Teste somente em pastas sintéticas. Windows 10/Server e datasets reais não estão validados nesta etapa.
-
-## Compilar, testar e executar
-
-Na raiz do repositório:
+## Compilação e teste
 
 ```powershell
 dotnet restore CLEAR.slnx
@@ -48,10 +37,8 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Consulte `docs/architecture/Marco_M3_Parte3A.md` e `docs/tests/Roteiro_Validacao_M3_Parte3A.md`.
+Veja `docs/architecture/Marco_M3_Parte3B.md` e `docs/tests/Roteiro_Validacao_M3_Parte3B.md`.
 
-## Status
+## Estado
 
-- M0–M2: integrados à `main`;
-- M3 Parte 1 e Parte 2: aprovadas no notebook e integradas à `develop` (60 testes ao final da Parte 2);
-- **M3 Parte 3A: publicada somente na feature após commit; build, testes e aceite local pendentes.**
+M0–M2 estão na `main`; M3 Partes 1, 2 e 3A foram testadas pelo autor e integradas à `develop`. A Parte 3B está **em feature**, aguardando execução dos testes e validação manual no notebook. A `main` não foi alterada.

@@ -1,11 +1,15 @@
 using Clear.Domain.Analise;
 using Clear.Domain.Arquivos;
+using Clear.Domain.Compatibilidade;
 using Clear.Domain.Inventario;
 
 namespace Clear.Application.Inventario;
 
 /// <summary>Quantidade de arquivos identificados em uma categoria; há sobreposição entre categorias.</summary>
 public sealed record ContagemCategoria(CategoriaAnalise Categoria, long QuantidadeArquivos);
+
+/// <summary>Contagem global por regra/estado, inclusive regras desativadas e não aplicáveis.</summary>
+public sealed record ContagemEstadoVerificacao(string CodigoRegra, EstadoVerificacao Estado, long Quantidade);
 
 /// <summary>
 /// Resumo e amostra de metadados classificados; não implica indicação de descarte.
@@ -22,7 +26,13 @@ public sealed class ResultadoInventario
         IEnumerable<OcorrenciaInventario> ocorrencias,
         long totalOcorrencias,
         long quantidadeDiretorios = 0,
-        IEnumerable<EntradaInventariada>? amostraDiretorios = null)
+        IEnumerable<EntradaInventariada>? amostraDiretorios = null,
+        ConfiguracaoCompatibilidade? configuracaoCompatibilidade = null,
+        FiltroTamanhoPersonalizado? filtroPersonalizado = null,
+        IEnumerable<AvaliacaoEntrada>? amostraAvaliacoes = null,
+        IEnumerable<ContagemEstadoVerificacao>? contagensVerificacoes = null,
+        long itensComIncompatibilidade = 0,
+        long arquivosAcimaLimitePersonalizado = 0)
     {
         QuantidadeArquivos = quantidadeArquivos;
         TotalBytes = totalBytes;
@@ -43,6 +53,18 @@ public sealed class ResultadoInventario
 
         QuantidadeDiretorios = quantidadeDiretorios;
         AmostraDiretorios = Array.AsReadOnly(subpastas);
+
+        if (itensComIncompatibilidade < 0 || arquivosAcimaLimitePersonalizado < 0)
+            throw new ArgumentOutOfRangeException(nameof(itensComIncompatibilidade));
+
+        ConfiguracaoCompatibilidade = configuracaoCompatibilidade ??
+            new ConfiguracaoCompatibilidade(null, Array.Empty<string>());
+        FiltroPersonalizado = filtroPersonalizado;
+        AmostraAvaliacoes = Array.AsReadOnly((amostraAvaliacoes ?? Array.Empty<AvaliacaoEntrada>()).ToArray());
+        ContagensVerificacoes = Array.AsReadOnly((contagensVerificacoes ??
+            Array.Empty<ContagemEstadoVerificacao>()).ToArray());
+        ItensComIncompatibilidade = itensComIncompatibilidade;
+        ArquivosAcimaLimitePersonalizado = arquivosAcimaLimitePersonalizado;
     }
 
     public long QuantidadeArquivos { get; }
@@ -56,6 +78,23 @@ public sealed class ResultadoInventario
     /// <summary>Subpastas descobertas; a raiz escolhida não está incluída.</summary>
     public long QuantidadeDiretorios { get; }
     public IReadOnlyList<EntradaInventariada> AmostraDiretorios { get; }
+    public ConfiguracaoCompatibilidade ConfiguracaoCompatibilidade { get; }
+    public FiltroTamanhoPersonalizado? FiltroPersonalizado { get; }
+    public IReadOnlyList<AvaliacaoEntrada> AmostraAvaliacoes { get; }
+    public IReadOnlyList<ContagemEstadoVerificacao> ContagensVerificacoes { get; }
+    public long ItensComIncompatibilidade { get; }
+    public long ArquivosAcimaLimitePersonalizado { get; }
+    public long AvaliacoesExecutadas => ContagensVerificacoes
+        .Where(x => x.Estado is EstadoVerificacao.IncompatibilidadeDocumentada
+            or EstadoVerificacao.Alerta or EstadoVerificacao.SemIncompatibilidadeDetectada)
+        .Sum(x => x.Quantidade);
+    public long AvaliacoesNaoAvaliadas => ContagensVerificacoes
+        .Where(x => x.Estado == EstadoVerificacao.NaoAvaliado)
+        .Sum(x => x.Quantidade);
+    public bool ApenasSemIncompatibilidadeDetectada =>
+        ConfiguracaoCompatibilidade.HaVerificacoesHabilitadas &&
+        AvaliacoesExecutadas > 0 && AvaliacoesNaoAvaliadas == 0 &&
+        ItensComIncompatibilidade == 0 && TotalOcorrencias == 0;
     public bool AmostraDiretoriosLimitada => QuantidadeDiretorios > AmostraDiretorios.Count;
     public bool AmostraLimitada => QuantidadeArquivos > AmostraArquivos.Count;
     public bool Incompleto => TotalOcorrencias > 0;
@@ -70,11 +109,15 @@ public sealed class InventariarDiretorio
     private readonly IFonteInventario _fonte;
     private readonly int _limiteAmostra;
     private readonly ClassificadorArquivos _classificador;
+    private readonly ConfiguracaoCompatibilidade _configuracaoCompatibilidade;
+    private readonly FiltroTamanhoPersonalizado? _filtroPersonalizado;
 
     public InventariarDiretorio(
         IFonteInventario fonte,
         int limiteAmostra = 1000,
-        ClassificadorArquivos? classificador = null)
+        ClassificadorArquivos? classificador = null,
+        ConfiguracaoCompatibilidade? configuracaoCompatibilidade = null,
+        FiltroTamanhoPersonalizado? filtroPersonalizado = null)
     {
         _fonte = fonte ?? throw new ArgumentNullException(nameof(fonte));
         if (limiteAmostra < 0 || limiteAmostra > 10000)
@@ -82,6 +125,9 @@ public sealed class InventariarDiretorio
 
         _limiteAmostra = limiteAmostra;
         _classificador = classificador ?? new ClassificadorArquivos();
+        _configuracaoCompatibilidade = configuracaoCompatibilidade ??
+            new ConfiguracaoCompatibilidade(null, Array.Empty<string>());
+        _filtroPersonalizado = filtroPersonalizado;
     }
 
     public async Task<ResultadoInventario> ExecutarAsync(
@@ -103,6 +149,11 @@ public sealed class InventariarDiretorio
         var amostraDiretorios = new List<EntradaInventariada>(Math.Min(_limiteAmostra, 1000));
         long quantidadeDiretorios = 0;
         var contagens = new Dictionary<CategoriaAnalise, long>();
+        var avaliador = new AvaliadorCompatibilidade(_configuracaoCompatibilidade);
+        var contagensVerificacoes = new Dictionary<(string, EstadoVerificacao), long>();
+        var amostraAvaliacoes = new List<AvaliacaoEntrada>(Math.Min(_limiteAmostra, 1000));
+        long itensComIncompatibilidade = 0;
+        long arquivosAcimaLimitePersonalizado = 0;
 
         // Uma única enumeração quando a fonte também fornece subpastas.
         // Fontes antigas, que fornecem apenas arquivos, continuam suportadas.
@@ -119,11 +170,14 @@ public sealed class InventariarDiretorio
                     quantidadeDiretorios = checked(quantidadeDiretorios + 1);
                     if (amostraDiretorios.Count < _limiteAmostra)
                         amostraDiretorios.Add(entrada);
+                    RegistrarCompatibilidade(entrada);
                 }
                 else
                 {
-                    RegistrarArquivo(entrada.Arquivo ??
-                        throw new InvalidOperationException("Entrada de arquivo sem metadados."));
+                    var arquivo = entrada.Arquivo ??
+                        throw new InvalidOperationException("Entrada de arquivo sem metadados.");
+                    RegistrarArquivo(arquivo);
+                    RegistrarCompatibilidade(entrada);
                 }
             }
         }
@@ -134,7 +188,31 @@ public sealed class InventariarDiretorio
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 RegistrarArquivo(arquivo);
+                RegistrarCompatibilidade(EntradaInventariada.DeArquivo(arquivo));
             }
+        }
+
+        void RegistrarCompatibilidade(EntradaInventariada entrada)
+        {
+            var resultados = avaliador.Avaliar(entrada);
+            var personalizado = entrada.TamanhoBytes is long tamanho &&
+                _filtroPersonalizado?.Excede(tamanho) == true;
+
+            if (personalizado)
+                arquivosAcimaLimitePersonalizado = checked(arquivosAcimaLimitePersonalizado + 1);
+
+            if (resultados.Any(x => x.Estado == EstadoVerificacao.IncompatibilidadeDocumentada))
+                itensComIncompatibilidade = checked(itensComIncompatibilidade + 1);
+
+            foreach (var verificacao in resultados)
+            {
+                var chave = (verificacao.CodigoRegra, verificacao.Estado);
+                contagensVerificacoes.TryGetValue(chave, out var anterior);
+                contagensVerificacoes[chave] = checked(anterior + 1);
+            }
+
+            if (amostraAvaliacoes.Count < _limiteAmostra)
+                amostraAvaliacoes.Add(new AvaliacaoEntrada(entrada, resultados, personalizado));
         }
 
         void RegistrarArquivo(ArquivoInventariado arquivo)
@@ -180,6 +258,13 @@ public sealed class InventariarDiretorio
             ocorrencias,
             totalOcorrencias,
             quantidadeDiretorios,
-            amostraDiretorios);
+            amostraDiretorios,
+            _configuracaoCompatibilidade,
+            _filtroPersonalizado,
+            amostraAvaliacoes,
+            contagensVerificacoes.OrderBy(x => x.Key.Item1).ThenBy(x => x.Key.Item2)
+                .Select(x => new ContagemEstadoVerificacao(x.Key.Item1, x.Key.Item2, x.Value)),
+            itensComIncompatibilidade,
+            arquivosAcimaLimitePersonalizado);
     }
 }
