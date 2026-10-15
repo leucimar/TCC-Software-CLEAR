@@ -1,49 +1,44 @@
 # CLEAR — TCC
 
-Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia, move nem descarta arquivos.**
+Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia, move ou descarta arquivos.**
 
-## Tecnologias e arquitetura
+## Tecnologias
 
-- C#/.NET 10 LTS, SDK 10.0.402 (`global.json`);
-- Windows Forms e quatro camadas: Domain, Application, Infrastructure, Desktop;
-- MSTest; Git/GitHub, sem dependências pagas.
+C#/.NET 10 LTS (SDK 10.0.402), Windows Forms, projetos Domain/Application/Infrastructure/Desktop, MSTest, Git/GitHub. Sem ferramentas pagas.
 
-## Capacidades
+## Funcionalidades disponíveis
 
-- M2: inventário de arquivos/bytes/ocorrências/cancelamento;
-- M3 Parte 1: indícios de arquivos vazios, nomes temporários e backup;
-- M3 Parte 2: sinal temporal configurável, desligado por padrão;
-- M3 Parte 3A: inventário de subpastas e contratos de compatibilidade;
-- M3 Parte 3B: sete verificações individuais de nomes/tamanho específicas por destino e filtro pessoal de tamanho;
-- **M4 (feature em validação): detecção opcional de duplicatas exatas** com pré-agrupamento por tamanho, SHA-256 em fluxo e confirmação por comparação byte a byte.
+- **M2:** inventário seguro de metadados de arquivos;
+- **M3:** classificação de vazios, backups/temporários, sinais temporais opcionais, contagem de subpastas e perfis de compatibilidade exclusivos Azure Files SMB/Windows ou SharePoint Online/OneDrive for Business;
+- **M4:** detecção opt-in de duplicatas exatas com pré-filtro por tamanho, SHA-256 em streaming e comparação byte a byte; grupos visualizados em aba própria;
+- **M5 — Parte 1 (em feature):** geração opcional de relatório CSV completo por streaming, resumo JSON com parâmetros/totais/ocorrências e CSV de grupos M4 quando a deduplicação é executada.
 
-### Compatibilidade por ambiente (M3)
+### Relatórios M5
 
-Escolha um único cenário: Azure Files clássico via SMB/Windows, SharePoint Online, OneDrive for Business ou *Sem destino*. As verificações de destino podem ser habilitadas/desabilitadas individualmente. Azure usa caracteres de nome e 4 TiB; SharePoint/OneDrive empresarial usam caracteres de nome, espaço inicial/final, sequência `_vti_` e 250 GiB (base binária), sempre conforme o recorte documental aprovado. O filtro pessoal de tamanho funciona sem perfil e não substitui o limite oficial.
+Marque **Exportar relatório completo (CSV + JSON — M5)** na interface e escolha **quais linhas serão exportadas**:
+- Todas as entradas (arquivos e subpastas, mesmo além da amostra visual de 1.000);
+- Somente indícios gerais;
+- Somente incompatibilidades documentadas pelas regras habilitadas;
+- Somente acima do limite pessoal;
+- Somente achados: união das três situações anteriores.
 
-## Escolha dos filtros e sugestões por destino
+Ao iniciar a análise, escolha uma **pasta de saída existente fora da pasta analisada**. Saída em CSV UTF-8 com BOM, separador `;`, escape de aspas e neutralização de fórmulas de planilhas. O JSON inclui contagens globais, configurações, horários UTC, avisos de incompletude e, se M4 estiver ativado, seus indicadores. O CSV de duplicatas lista todos os membros dos grupos, independentemente do limite de 200 linhas da aba visual.
 
-Ao abrir o CLEAR, **todas as checkboxes** ficam visíveis em três grupos: **Filtros gerais**, **Azure Files** e **SharePoint/OneDrive empresarial**. O destino continua exclusivo (incluindo a opção *Sem destino*). Ao selecionar Azure Files ou SharePoint/OneDrive, o programa marca automaticamente **todas as verificações locais aprovadas para aquele ambiente** (duas para Azure ou cinco para SharePoint/OneDrive). O outro grupo permanece visível, porém desabilitado. Após a sugestão, o operador pode desmarcar individualmente as regras do ambiente escolhido; ao trocar o destino, é aplicado novamente o conjunto sugerido para o novo perfil.
+O exportador recebe cada entrada durante o **inventário M3 original**, sem varredura adicional de metadados apenas para salvar o relatório. M4, se habilitado, já exige sua própria varredura e leitura de conteúdo. As linhas exportadas podem ser filtradas, mas o resumo sempre considera o inventário completo obtido.
 
-As classificações gerais de **arquivos vazios** e **backups/temporários** começam marcadas para manter o comportamento do M3; agora também podem ser desmarcadas individualmente. A análise temporal, o filtro pessoal de tamanho e a detecção SHA-256 iniciam **desmarcados**. A seleção de destino **não altera os filtros gerais** e jamais ativa SHA-256 automaticamente, pois ele exige leitura do conteúdo.
+A saída recebe nomes únicos com data e GUID, é publicada após conclusão e tem arquivos temporários removidos em caso de falha/cancelamento. **A geração cria arquivos de relatório na pasta indicada**, mas não altera o acervo analisado.
 
-### Duplicatas exatas (M4)
+### Segurança e limites
 
-A busca de duplicatas é **desligada por padrão** e deve ser habilitada em **Filtros gerais — independentes do ambiente**. A busca:
-1. Faz uma nova enumeração somente leitura de metadados e agrupa arquivos por tamanho;
-2. Calcula **SHA-256 por stream apenas dos arquivos que compartilham tamanho**;
-3. Compara diretamente o conteúdo em blocos antes de declarar um grupo de duplicatas exatas;
-4. Mostra grupos e membros na aba `Duplicatas exatas — M4`. Os totais consideram todos os grupos; até 200 linhas de membros são renderizadas.
+- Nenhuma operação de migração, edição, movimentação ou exclusão do acervo.
+- O conteúdo só é lido para SHA-256 quando solicitado. Duplicatas exatas não autorizam descarte.
+- Relatórios podem conter caminhos completos e hashes sensíveis; trate-os com cuidado.
+- A ausência de incompatibilidade detectada não garante migração.
+- Exportação não é armazenamento SQLite, nem mecanismo de consultas persistentes/decisões humanas. **Reuso de classificações e hashes anteriores continua em estudo para M6/M9**, condicionado à segurança e medições.
+- A memória usada pelo inventário visual é limitada por amostra; o índice de caminhos do M4 continua em RAM, e consultas/paginação sofisticadas ficam para incrementos posteriores.
+- Teste apenas pastas sintéticas até concluir a validação.
 
-A leitura do conteúdo é **somente leitura**, mas aumenta I/O e tempo de processamento. Um arquivo alterado entre o inventário e a leitura é rejeitado quando as verificações de tamanho/data detectam a mudança. Arquivos inacessíveis, links/reparse points e falhas tornam o resultado **parcial**, nunca uma conclusão de que não existem duplicatas. Não há garantias transacionais em ambientes com escrita concorrente ou alterações adversariais de metadados; não usar resultados como autorização para descartar.
-
-O indicador de bytes potencialmente redundantes assume **uma cópia conservada por grupo** e não equivale a espaço efetivamente liberado, economia monetária nem decisão de exclusão. O conteúdo de arquivos nunca é carregado inteiro na RAM; o índice de metadados e os grupos são mantidos em memória neste M4 (otimização para acervos enormes fica para M5/M6/M9). Hashes não são persistidos ou reutilizados automaticamente.
-
-### Limites
-
-O CLEAR ainda não exporta relatórios, persiste resultados em SQLite, permite decisões persistentes de usuário, faz quarentena, rollback ou migração. A análise lê metadados e, quando habilitada, conteúdo para SHA-256/comparação. Links identificados não são seguidos. Melhorias de layout e apresentações para grandes acervos estão planejadas em M5. Use apenas dados sintéticos em testes.
-
-## Restaurar, compilar, testar, executar
+## Compilar, testar e executar
 
 ```powershell
 dotnet restore CLEAR.slnx
@@ -52,8 +47,8 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Leia `docs/architecture/Marco_M4_Duplicatas_Exatas.md` e `docs/tests/Roteiro_Validacao_M4.md`.
+Veja `docs/architecture/Marco_M5_Relatorios_Parte1.md` e `docs/tests/Roteiro_Validacao_M5_Parte1.md`.
 
 ## Estado
 
-M0–M2 estão na `main`; M3 Partes 1, 2, 3A e 3B estão aprovadas na `develop` (119 testes no notebook após M3). **M4 está em `feature/duplicatas-exatas-m4`, sem compilação/teste local nem aceite neste momento.** A `main` permanece inalterada.
+M0–M2 em `main`; M3 e M4 integrados à `develop`. M4 teve validação manual e a última captura do teste automatizado antes da correção mostrava 146/147; asserção foi corrigida em seguida, mas a execução completa final não foi registrada nesta conversa. **M5 Parte 1 em `feature/relatorios-completos-m5`, não testada localmente nem integrada.** `main` permanece inalterada.

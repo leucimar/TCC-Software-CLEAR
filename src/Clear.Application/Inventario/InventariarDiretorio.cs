@@ -111,13 +111,15 @@ public sealed class InventariarDiretorio
     private readonly ClassificadorArquivos _classificador;
     private readonly ConfiguracaoCompatibilidade _configuracaoCompatibilidade;
     private readonly FiltroTamanhoPersonalizado? _filtroPersonalizado;
+    private readonly IObservadorInventario? _observador;
 
     public InventariarDiretorio(
         IFonteInventario fonte,
         int limiteAmostra = 1000,
         ClassificadorArquivos? classificador = null,
         ConfiguracaoCompatibilidade? configuracaoCompatibilidade = null,
-        FiltroTamanhoPersonalizado? filtroPersonalizado = null)
+        FiltroTamanhoPersonalizado? filtroPersonalizado = null,
+        IObservadorInventario? observador = null)
     {
         _fonte = fonte ?? throw new ArgumentNullException(nameof(fonte));
         if (limiteAmostra < 0 || limiteAmostra > 10000)
@@ -128,6 +130,7 @@ public sealed class InventariarDiretorio
         _configuracaoCompatibilidade = configuracaoCompatibilidade ??
             new ConfiguracaoCompatibilidade(null, Array.Empty<string>());
         _filtroPersonalizado = filtroPersonalizado;
+        _observador = observador;
     }
 
     public async Task<ResultadoInventario> ExecutarAsync(
@@ -170,14 +173,20 @@ public sealed class InventariarDiretorio
                     quantidadeDiretorios = checked(quantidadeDiretorios + 1);
                     if (amostraDiretorios.Count < _limiteAmostra)
                         amostraDiretorios.Add(entrada);
-                    RegistrarCompatibilidade(entrada);
+                    var avaliacaoDiretorio = RegistrarCompatibilidade(entrada);
+                    if (_observador is not null)
+                        await _observador.RegistrarAsync(entrada, null, avaliacaoDiretorio, cancellationToken)
+                            .ConfigureAwait(false);
                 }
                 else
                 {
                     var arquivo = entrada.Arquivo ??
                         throw new InvalidOperationException("Entrada de arquivo sem metadados.");
-                    RegistrarArquivo(arquivo);
-                    RegistrarCompatibilidade(entrada);
+                    var classificacao = RegistrarArquivo(arquivo);
+                    var avaliacaoArquivo = RegistrarCompatibilidade(entrada);
+                    if (_observador is not null)
+                        await _observador.RegistrarAsync(entrada, classificacao, avaliacaoArquivo, cancellationToken)
+                            .ConfigureAwait(false);
                 }
             }
         }
@@ -187,12 +196,16 @@ public sealed class InventariarDiretorio
                                .WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                RegistrarArquivo(arquivo);
-                RegistrarCompatibilidade(EntradaInventariada.DeArquivo(arquivo));
+                var classificacao = RegistrarArquivo(arquivo);
+                var entrada = EntradaInventariada.DeArquivo(arquivo);
+                var avaliacaoArquivo = RegistrarCompatibilidade(entrada);
+                if (_observador is not null)
+                    await _observador.RegistrarAsync(entrada, classificacao, avaliacaoArquivo, cancellationToken)
+                        .ConfigureAwait(false);
             }
         }
 
-        void RegistrarCompatibilidade(EntradaInventariada entrada)
+        AvaliacaoEntrada RegistrarCompatibilidade(EntradaInventariada entrada)
         {
             var resultados = avaliador.Avaliar(entrada);
             var personalizado = entrada.TamanhoBytes is long tamanho &&
@@ -211,11 +224,13 @@ public sealed class InventariarDiretorio
                 contagensVerificacoes[chave] = checked(anterior + 1);
             }
 
+            var avaliacao = new AvaliacaoEntrada(entrada, resultados, personalizado);
             if (amostraAvaliacoes.Count < _limiteAmostra)
-                amostraAvaliacoes.Add(new AvaliacaoEntrada(entrada, resultados, personalizado));
+                amostraAvaliacoes.Add(avaliacao);
+            return avaliacao;
         }
 
-        void RegistrarArquivo(ArquivoInventariado arquivo)
+        ResultadoAnaliseArquivo RegistrarArquivo(ArquivoInventariado arquivo)
         {
             ArgumentNullException.ThrowIfNull(arquivo);
 
@@ -240,6 +255,8 @@ public sealed class InventariarDiretorio
 
             if (quantidade % 100 == 0)
                 progresso?.Report(new ProgressoInventario(quantidade, bytes));
+
+            return resultadoArquivo;
         }
 
         var fonteComOcorrencias = _fonte as IFonteInventarioComOcorrencias;
