@@ -1,8 +1,10 @@
 using Clear.Application.Inventario;
+using Clear.Application.Duplicatas;
 using Clear.Domain.Analise;
 using Clear.Domain.Compatibilidade;
 using Clear.Domain.Inventario;
 using Clear.Infrastructure.Inventario;
+using Clear.Infrastructure.Duplicatas;
 
 namespace Clear.Desktop;
 
@@ -31,6 +33,25 @@ public partial class Form1 : Form
         SelectionMode = DataGridViewSelectionMode.FullRowSelect
     };
     private readonly ListBox _ocorrencias = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true };
+    private readonly CheckBox _ativarDuplicatas = new()
+    {
+        Text = "Detectar duplicatas exatas (SHA-256; leitura do conteúdo)",
+        AutoSize = true, Checked = false
+    };
+    private readonly DataGridView _gradeDuplicatas = new()
+    {
+        Dock = DockStyle.Fill, ReadOnly = true,
+        AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        RowHeadersVisible = false, MultiSelect = false,
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+    };
+    private readonly Label _resumoDuplicatas = new()
+    {
+        Dock = DockStyle.Fill,
+        Text = "Busca de duplicatas desativada. Marque o filtro geral para habilitar.",
+        AutoEllipsis = true
+    };
 
     private readonly RadioButton _semDestino = new()
         { Text = "Sem destino (análise geral)", AutoSize = true, Checked = true };
@@ -66,7 +87,7 @@ public partial class Form1 : Form
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Pré-análise de arquivos e compatibilidade de destinos (M3)";
+        Text = "CLEAR — Pré-análise de arquivos e duplicatas exatas (M4)";
         MinimumSize = new Size(1040, 680);
         Size = new Size(1350, 880);
 
@@ -94,7 +115,7 @@ public partial class Form1 : Form
         topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
         var mensagem = new Label
         {
-            Text = "Somente leitura de metadados. Indícios não autorizam descarte nem garantem migração.",
+            Text = "Análise somente leitura. Duplicatas usam leitura de conteúdo; nada é movido, modificado ou excluído.",
             Dock = DockStyle.Fill, AutoSize = true
         };
         topo.Controls.Add(mensagem, 0, 0);
@@ -159,7 +180,11 @@ public partial class Form1 : Form
         _unidade.Items.AddRange(new object[] { "B", "KiB", "MiB", "GiB", "TiB" });
         _unidade.SelectedIndex = 3;
         filtros.Controls.Add(_unidade);
+        filtros.Controls.Add(_ativarDuplicatas);
         grupoGeral.Controls.Add(filtros);
+        _dicas.SetToolTip(_ativarDuplicatas,
+            "Busca opcional: recenseia arquivos, agrupa por tamanho, calcula SHA-256 " +
+            "somente para candidatos e confirma igualdade byte a byte. Nenhum arquivo é alterado.");
         _dicas.SetToolTip(_ativarTamanho,
             "Filtro operacional: sinaliza arquivos maiores que o valor escolhido. " +
             "Não substitui nem altera os limites oficiais dos destinos.");
@@ -182,7 +207,22 @@ public partial class Form1 : Form
         principal.Controls.Add(seletor, 0, 1);
         principal.Controls.Add(grupoGeral, 0, 2);
         principal.Controls.Add(_resumo, 0, 3);
-        principal.Controls.Add(_grade, 0, 4);
+        var abas = new TabControl { Dock = DockStyle.Fill };
+        var abaInventario = new TabPage("Inventário e compatibilidade");
+        var abaDuplicatas = new TabPage("Duplicatas exatas — M4");
+        abaInventario.Controls.Add(_grade);
+        var painelDuplicatas = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2
+        };
+        painelDuplicatas.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        painelDuplicatas.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        painelDuplicatas.Controls.Add(_resumoDuplicatas, 0, 0);
+        painelDuplicatas.Controls.Add(_gradeDuplicatas, 0, 1);
+        abaDuplicatas.Controls.Add(painelDuplicatas);
+        abas.TabPages.Add(abaInventario);
+        abas.TabPages.Add(abaDuplicatas);
+        principal.Controls.Add(abas, 0, 4);
         principal.Controls.Add(areaOcorrencias, 0, 5);
         principal.Controls.Add(_estado, 0, 6);
         Controls.Add(principal);
@@ -205,6 +245,20 @@ public partial class Form1 : Form
             }
         };
 
+        _gradeDuplicatas.DataBindingComplete += (_, _) =>
+        {
+            foreach (DataGridViewColumn coluna in _gradeDuplicatas.Columns)
+                coluna.Width = coluna.Name switch
+                {
+                    "Grupo" => 85,
+                    "TamanhoBytes" => 130,
+                    "Sha256" => 520,
+                    _ => 470
+                };
+            foreach (DataGridViewRow linha in _gradeDuplicatas.Rows)
+                foreach (DataGridViewCell celula in linha.Cells)
+                    celula.ToolTipText = Convert.ToString(celula.Value) ?? "";
+        };
         _grade.DataBindingComplete += (_, _) =>
         {
             var larguras = new Dictionary<string, int>
@@ -259,6 +313,7 @@ public partial class Form1 : Form
         _dias.Enabled = pronto && _ativarSinalTemporal.Checked;
         _limite.Enabled = pronto && _ativarTamanho.Checked;
         _unidade.Enabled = pronto && _ativarTamanho.Checked;
+        _ativarDuplicatas.Enabled = pronto;
     }
 
     private void SelecionarPasta()
@@ -320,6 +375,7 @@ public partial class Form1 : Form
         FiltroTamanhoPersonalizado? filtro;
         ClassificadorArquivos classificador;
         var usarSinalTemporal = _ativarSinalTemporal.Checked;
+        var usarDuplicatas = _ativarDuplicatas.Checked;
         var diasSelecionados = (int)_dias.Value;
 
         try
@@ -349,6 +405,10 @@ public partial class Form1 : Form
         _ativarTamanho.Enabled = false;
         AtualizarHabilitacao();
         _grade.DataSource = null;
+        _gradeDuplicatas.DataSource = null;
+        _resumoDuplicatas.Text = usarDuplicatas
+            ? "Aguardando o inventário para iniciar a busca de duplicatas..."
+            : "Busca de duplicatas desativada. Marque o filtro geral para habilitar.";
         _ocorrencias.Items.Clear();
         _resumo.Text = "Inventariando metadados e aplicando verificações habilitadas...";
 
@@ -419,6 +479,53 @@ public partial class Form1 : Form
                 (usarSinalTemporal ? $"Sinal temporal: {diasSelecionados} dias. " : "") +
                 "Nenhum arquivo alterado.";
             _dicas.SetToolTip(_estado, _estado.Text);
+
+            if (usarDuplicatas)
+            {
+                // A detecção usa outra varredura para não reter todos os caminhos
+                // do inventário M3, cuja tabela segue limitada a 1.000 entradas.
+                _resumoDuplicatas.Text = "Calculando grupos por tamanho e SHA-256; leitura somente...";
+                var progressoDuplicatas = new Progress<ProgressoDuplicatas>(p =>
+                    _resumoDuplicatas.Text =
+                        $"Hash calculado: {p.CandidatosComHash:N0} de {p.ArquivosCandidatos:N0} candidatos.");
+                var detectar = new DetectarDuplicatasExatas(
+                    new FonteInventarioSistemaArquivos(),
+                    new LeitorConteudoDuplicatasSistemaArquivos());
+                var duplicatas = await Task.Run(
+                    () => detectar.ExecutarAsync(pasta, progressoDuplicatas, token), token);
+
+                // Apenas as primeiras 200 linhas são renderizadas. Os totais
+                // incluem todos os grupos e arquivos validados.
+                _gradeDuplicatas.DataSource = duplicatas.Grupos
+                    .SelectMany((grupo, indice) => grupo.Arquivos.Select(arquivo => new
+                    {
+                        Grupo = indice + 1,
+                        TamanhoBytes = grupo.TamanhoBytes,
+                        Arquivo = arquivo.CaminhoCompleto,
+                        Sha256 = grupo.Sha256Hex
+                    }))
+                    .Take(200).ToList();
+
+                _resumoDuplicatas.Text =
+                    $"{duplicatas.Grupos.Count:N0} grupo(s) exato(s) | " +
+                    $"{duplicatas.ArquivosEmGrupos:N0} arquivo(s) em grupos | " +
+                    $"{duplicatas.CandidatosPorTamanho:N0} candidato(s) por tamanho | " +
+                    $"{duplicatas.ArquivosComHash:N0} hashes | " +
+                    $"{duplicatas.BytesPotencialmenteRedundantes:N0} bytes potencialmente redundantes " +
+                    "(estimativa; sem descarte)" +
+                    (duplicatas.Incompleto
+                        ? $" | ATENÇÃO: {duplicatas.TotalOcorrencias:N0} ocorrência(s), resultado parcial"
+                        : "") +
+                    (duplicatas.ArquivosEmGrupos > 200 ? " | exibindo apenas 200 linhas" : "");
+
+                foreach (var ocorrencia in duplicatas.Ocorrencias)
+                    _ocorrencias.Items.Add(
+                        $"M4 — {ocorrencia.Tipo}: {ocorrencia.Caminho} — {ocorrencia.Descricao}");
+                _estado.Text = duplicatas.Incompleto
+                    ? "M4 parcial: houve falhas; nenhuma ação foi executada. " +
+                      "Os grupos listados passaram por comparação byte a byte."
+                    : "M4 concluído: SHA-256 e confirmação byte a byte. Nenhum arquivo alterado.";
+            }
         }
         catch (OperationCanceledException)
         {
