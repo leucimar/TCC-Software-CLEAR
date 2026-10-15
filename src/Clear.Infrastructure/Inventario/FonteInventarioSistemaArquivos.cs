@@ -2,14 +2,16 @@ using System.Runtime.CompilerServices;
 using System.Security;
 using Clear.Application.Inventario;
 using Clear.Domain.Arquivos;
+using Clear.Domain.Inventario;
 
 namespace Clear.Infrastructure.Inventario;
 
 /// <summary>
-/// Enumeração iterativa somente leitura. Não abre conteúdos, não segue reparse
-/// points identificados e não modifica, renomeia ou remove arquivos/diretórios.
+/// Enumera arquivos e subpastas uma única vez, somente lendo metadados.
+/// Não segue reparse points, nem modifica ou abre conteúdo dos arquivos.
 /// </summary>
-public sealed class FonteInventarioSistemaArquivos : IFonteInventarioComOcorrencias
+public sealed class FonteInventarioSistemaArquivos :
+    IFonteInventarioComOcorrencias, IFonteInventarioComEntradas
 {
     private const int MaximoOcorrenciasExibidas = 100;
     private readonly List<OcorrenciaInventario> _ocorrencias = new();
@@ -21,7 +23,20 @@ public sealed class FonteInventarioSistemaArquivos : IFonteInventarioComOcorrenc
 
     public long TotalOcorrencias => _totalOcorrencias;
 
+    // Mantém o contrato original do M1–M3 para consumidores de apenas arquivos.
     public async IAsyncEnumerable<ArquivoInventariado> EnumerarAsync(
+        string diretorioRaiz,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var entrada in EnumerarEntradasAsync(diretorioRaiz, cancellationToken)
+                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            if (entrada.Arquivo is { } arquivo)
+                yield return arquivo;
+        }
+    }
+
+    public async IAsyncEnumerable<EntradaInventariada> EnumerarEntradasAsync(
         string diretorioRaiz,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -44,19 +59,17 @@ public sealed class FonteInventarioSistemaArquivos : IFonteInventarioComOcorrenc
             if (!raiz.Exists)
                 throw new DirectoryNotFoundException("Diretório raiz inexistente: " + raiz.FullName);
 
-            // Não aceitar caminho escolhido sob um ancestral explicitamente marcado
-            // como reparse point (junction ou link). Isso evita seguir esses links
-            // silenciosamente antes de iniciar a travessia.
+            // Omitir links selecionados como raiz ou existentes em seus ancestrais.
             for (DirectoryInfo? componente = raiz; componente is not null; componente = componente.Parent)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if ((componente.Attributes & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException("A raiz ou um ancestral é um link/junction; escolha outra pasta de teste.");
+                    throw new IOException("A raiz ou um ancestral é link/junction; escolha outra pasta.");
             }
 
             var pendentes = new Stack<DirectoryInfo>();
             pendentes.Push(raiz);
-            long arquivosEnumerados = 0;
+            long entradasEnumeradas = 0;
 
             while (pendentes.Count > 0)
             {
@@ -79,7 +92,6 @@ public sealed class FonteInventarioSistemaArquivos : IFonteInventarioComOcorrenc
                     while (true)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-
                         FileSystemInfo entrada;
                         try
                         {
@@ -93,43 +105,47 @@ public sealed class FonteInventarioSistemaArquivos : IFonteInventarioComOcorrenc
                             break;
                         }
 
-                        ArquivoInventariado arquivo;
+                        EntradaInventariada? item = null;
                         try
                         {
                             var atributos = entrada.Attributes;
-
                             if ((atributos & FileAttributes.ReparsePoint) != 0)
                             {
                                 Registrar(entrada.FullName, "LinkIgnorado",
-                                    "Link simbólico/junction/reparse point não seguido.");
+                                    "Reparse point/junction/link não seguido.");
                                 continue;
                             }
 
                             if ((atributos & FileAttributes.Directory) != 0)
                             {
-                                pendentes.Push(new DirectoryInfo(entrada.FullName));
-                                continue;
+                                var subpasta = new DirectoryInfo(entrada.FullName);
+                                item = EntradaInventariada.DeDiretorio(subpasta.FullName);
+                                pendentes.Push(subpasta);
                             }
-
-                            var info = new FileInfo(entrada.FullName);
-                            arquivo = new ArquivoInventariado(
-                                info.FullName,
-                                info.Length,
-                                new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero),
-                                new DateTimeOffset(info.LastAccessTimeUtc, TimeSpan.Zero));
+                            else
+                            {
+                                var info = new FileInfo(entrada.FullName);
+                                var arquivo = new ArquivoInventariado(
+                                    info.FullName,
+                                    info.Length,
+                                    new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero),
+                                    new DateTimeOffset(info.LastAccessTimeUtc, TimeSpan.Zero));
+                                item = EntradaInventariada.DeArquivo(arquivo);
+                            }
                         }
                         catch (Exception ex) when (Recuperavel(ex))
                         {
-                            Registrar(entrada.FullName, "ArquivoInacessivel", ex.Message);
+                            Registrar(entrada.FullName, "EntradaInacessivel", ex.Message);
                             continue;
                         }
 
-                        yield return arquivo;
-                        arquivosEnumerados = checked(arquivosEnumerados + 1);
-
-                        // Mantém a enumeração responsiva ao cancelamento, sem abrir o arquivo.
-                        if (arquivosEnumerados % 64 == 0)
-                            await Task.Yield();
+                        if (item is not null)
+                        {
+                            yield return item;
+                            entradasEnumeradas = checked(entradasEnumeradas + 1);
+                            if (entradasEnumeradas % 64 == 0)
+                                await Task.Yield();
+                        }
                     }
                 }
             }

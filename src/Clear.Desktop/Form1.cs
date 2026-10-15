@@ -221,7 +221,7 @@ public partial class Form1 : Form
             var parcial = resultado.Incompleto ? " | inventário parcial (ocorrências registradas)" : "";
             var exibicao = resultado.AmostraLimitada ? " | exibindo os primeiros 1.000 arquivos" : "";
             _resumo.Text =
-                $"{resultado.QuantidadeArquivos:N0} arquivo(s) | {resultado.TotalBytes:N0} bytes" +
+                $"{resultado.QuantidadeArquivos:N0} arquivo(s) | {resultado.QuantidadeDiretorios:N0} subpasta(s) | {resultado.TotalBytes:N0} bytes" +
                 $" | {resultado.ArquivosComIndicios:N0} arquivo(s) com indícios" +
                 $" | {resultado.TotalOcorrencias:N0} ocorrência(s){parcial}{exibicao}";
 
