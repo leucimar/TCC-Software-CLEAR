@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Path (Join-Path $raiz "Equipe\2026") -Force | Out-
 New-Item -ItemType Directory -Path (Join-Path $raiz "Vazia") | Out-Null
 [IO.File]::WriteAllBytes((Join-Path $raiz "relatorio.txt"), [byte[]](1,2,3))
 [IO.File]::WriteAllBytes((Join-Path $raiz "Equipe\2026\backup.bak"), [byte[]](1,2))
-[IO.File]::WriteAllBytes((Join-Path $raiz "Vazia\zero.txt"), [byte[]]@())
+[IO.File]::WriteAllBytes((Join-Path $raiz "zero.txt"), [byte[]]@())
 Write-Host $raiz
 ```
 
