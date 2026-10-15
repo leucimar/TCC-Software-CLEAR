@@ -1,5 +1,6 @@
 using Clear.Domain.Analise;
 using Clear.Domain.Arquivos;
+using Clear.Domain.Inventario;
 
 namespace Clear.Application.Inventario;
 
@@ -19,7 +20,9 @@ public sealed class ResultadoInventario
         IEnumerable<ContagemCategoria> contagensCategoria,
         long arquivosComIndicios,
         IEnumerable<OcorrenciaInventario> ocorrencias,
-        long totalOcorrencias)
+        long totalOcorrencias,
+        long quantidadeDiretorios = 0,
+        IEnumerable<EntradaInventariada>? amostraDiretorios = null)
     {
         QuantidadeArquivos = quantidadeArquivos;
         TotalBytes = totalBytes;
@@ -29,6 +32,17 @@ public sealed class ResultadoInventario
         ArquivosComIndicios = arquivosComIndicios;
         Ocorrencias = Array.AsReadOnly(ocorrencias.ToArray());
         TotalOcorrencias = totalOcorrencias;
+        if (quantidadeDiretorios < 0)
+            throw new ArgumentOutOfRangeException(nameof(quantidadeDiretorios));
+
+        var subpastas = (amostraDiretorios ?? Array.Empty<EntradaInventariada>()).ToArray();
+        if (subpastas.Any(item => item is null || item.Tipo != TipoEntradaInventario.Diretorio))
+            throw new ArgumentException("A amostra de diretórios contém uma entrada inválida.", nameof(amostraDiretorios));
+        if (subpastas.Length > quantidadeDiretorios)
+            throw new ArgumentException("A amostra excede a quantidade de diretórios.", nameof(amostraDiretorios));
+
+        QuantidadeDiretorios = quantidadeDiretorios;
+        AmostraDiretorios = Array.AsReadOnly(subpastas);
     }
 
     public long QuantidadeArquivos { get; }
@@ -39,6 +53,10 @@ public sealed class ResultadoInventario
     public long ArquivosComIndicios { get; }
     public IReadOnlyList<OcorrenciaInventario> Ocorrencias { get; }
     public long TotalOcorrencias { get; }
+    /// <summary>Subpastas descobertas; a raiz escolhida não está incluída.</summary>
+    public long QuantidadeDiretorios { get; }
+    public IReadOnlyList<EntradaInventariada> AmostraDiretorios { get; }
+    public bool AmostraDiretoriosLimitada => QuantidadeDiretorios > AmostraDiretorios.Count;
     public bool AmostraLimitada => QuantidadeArquivos > AmostraArquivos.Count;
     public bool Incompleto => TotalOcorrencias > 0;
 }
@@ -82,12 +100,45 @@ public sealed class InventariarDiretorio
 
         var amostra = new List<ArquivoInventariado>(Math.Min(_limiteAmostra, 1000));
         var amostraClassificada = new List<ResultadoAnaliseArquivo>(Math.Min(_limiteAmostra, 1000));
+        var amostraDiretorios = new List<EntradaInventariada>(Math.Min(_limiteAmostra, 1000));
+        long quantidadeDiretorios = 0;
         var contagens = new Dictionary<CategoriaAnalise, long>();
 
-        await foreach (var arquivo in _fonte.EnumerarAsync(diretorioRaiz, cancellationToken)
-                           .WithCancellation(cancellationToken).ConfigureAwait(false))
+        // Uma única enumeração quando a fonte também fornece subpastas.
+        // Fontes antigas, que fornecem apenas arquivos, continuam suportadas.
+        if (_fonte is IFonteInventarioComEntradas fonteComEntradas)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            await foreach (var entrada in fonteComEntradas.EnumerarEntradasAsync(diretorioRaiz, cancellationToken)
+                               .WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ArgumentNullException.ThrowIfNull(entrada);
+
+                if (entrada.Tipo == TipoEntradaInventario.Diretorio)
+                {
+                    quantidadeDiretorios = checked(quantidadeDiretorios + 1);
+                    if (amostraDiretorios.Count < _limiteAmostra)
+                        amostraDiretorios.Add(entrada);
+                }
+                else
+                {
+                    RegistrarArquivo(entrada.Arquivo ??
+                        throw new InvalidOperationException("Entrada de arquivo sem metadados."));
+                }
+            }
+        }
+        else
+        {
+            await foreach (var arquivo in _fonte.EnumerarAsync(diretorioRaiz, cancellationToken)
+                               .WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                RegistrarArquivo(arquivo);
+            }
+        }
+
+        void RegistrarArquivo(ArquivoInventariado arquivo)
+        {
             ArgumentNullException.ThrowIfNull(arquivo);
 
             quantidade = checked(quantidade + 1);
@@ -127,6 +178,8 @@ public sealed class InventariarDiretorio
             contagens.OrderBy(x => x.Key).Select(x => new ContagemCategoria(x.Key, x.Value)),
             arquivosComIndicios,
             ocorrencias,
-            totalOcorrencias);
+            totalOcorrencias,
+            quantidadeDiretorios,
+            amostraDiretorios);
     }
 }
