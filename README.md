@@ -1,6 +1,6 @@
 # CLEAR — TCC
 
-Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia nem descarta arquivos.**
+Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia, move nem descarta arquivos.**
 
 ## Tecnologias e arquitetura
 
@@ -10,25 +10,40 @@ Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assi
 
 ## Capacidades
 
-- M2: inventário de arquivos/bytes/erros/cancelamento;
-- M3 Parte 1: indícios de arquivos vazios e nomes temporários/backup;
-- M3 Parte 2: sinal temporal configurável e desativado por padrão;
-- M3 Parte 3A: inventário de subpastas, inclusive vazias, contratos para perfis e resultados;
-- **M3 Parte 3B (branch de testes):** verificações locais por ambiente exclusivo, sete checkboxes independentes e filtro opcional de tamanho personalizado.
+- M2: inventário de arquivos/bytes/ocorrências/cancelamento;
+- M3 Parte 1: indícios de arquivos vazios, nomes temporários e backup;
+- M3 Parte 2: sinal temporal configurável, desligado por padrão;
+- M3 Parte 3A: inventário de subpastas e contratos de compatibilidade;
+- M3 Parte 3B: sete verificações individuais de nomes/tamanho específicas por destino e filtro pessoal de tamanho;
+- **M4 (feature em validação): detecção opcional de duplicatas exatas** com pré-agrupamento por tamanho, SHA-256 em fluxo e confirmação por comparação byte a byte.
 
-### Perfil de destino
+### Compatibilidade por ambiente (M3)
 
-Escolha **um**: Azure Files clássico SMB em cliente Windows; SharePoint Online; ou OneDrive for Business. Escolha *Sem destino* para executar só os filtros gerais. OneDrive pessoal e Azure NFS ainda não são contemplados. As checkboxes das regras específicas podem ser ativadas/desativadas individualmente.
+Escolha um único cenário: Azure Files clássico via SMB/Windows, SharePoint Online, OneDrive for Business ou *Sem destino*. As verificações de destino podem ser habilitadas/desabilitadas individualmente. Azure usa caracteres de nome e 4 TiB; SharePoint/OneDrive empresarial usam caracteres de nome, espaço inicial/final, sequência `_vti_` e 250 GiB (base binária), sempre conforme o recorte documental aprovado. O filtro pessoal de tamanho funciona sem perfil e não substitui o limite oficial.
 
-O catálogo `M3-3B-1` oferece:
-- Azure: pontuação proibida do nome e tamanho maior que 4 TiB;
-- SharePoint/OneDrive empresarial: pontuação proibida, espaço inicial/final, sequência `_vti_` e tamanho maior que 250 GiB (base binária).
+## Escolha dos filtros e sugestões por destino
 
-Os limites oficiais são imutáveis e não confundidos com o filtro operacional. O filtro pessoal aceita B, KiB, MiB, GiB e TiB, apenas quando marcado; identifica arquivos maiores que o valor informado, **mesmo quando válidos para o serviço**. Todos os resultados são hipóteses de pré-avaliação local: ausência de incompatibilidade documentada nas regras habilitadas **não equivale à garantia de migração**.
+Ao abrir o CLEAR, **todas as checkboxes** ficam visíveis em três grupos: **Filtros gerais**, **Azure Files** e **SharePoint/OneDrive empresarial**. O destino continua exclusivo (incluindo a opção *Sem destino*). Ao selecionar Azure Files ou SharePoint/OneDrive, o programa marca automaticamente **todas as verificações locais aprovadas para aquele ambiente** (duas para Azure ou cinco para SharePoint/OneDrive). O outro grupo permanece visível, porém desabilitado. Após a sugestão, o operador pode desmarcar individualmente as regras do ambiente escolhido; ao trocar o destino, é aplicado novamente o conjunto sugerido para o novo perfil.
 
-Pastas e arquivos são avaliados por nome; tamanho só se aplica a arquivos. Não há projeção de caminho remoto, verificação de quota, autenticação, Azure NFS, OneDrive pessoal, análise de conteúdo, hash, duplicatas, persistência ou ação destrutiva. Links/junctions conhecidos são ignorados. Até 1.000 entradas são exibidas, mas todas as entradas enumeradas são contabilizadas. Pastas sintéticas são obrigatórias para os testes do TCC.
+As classificações gerais de **arquivos vazios** e **backups/temporários** começam marcadas para manter o comportamento do M3; agora também podem ser desmarcadas individualmente. A análise temporal, o filtro pessoal de tamanho e a detecção SHA-256 iniciam **desmarcados**. A seleção de destino **não altera os filtros gerais** e jamais ativa SHA-256 automaticamente, pois ele exige leitura do conteúdo.
 
-## Compilação e teste
+### Duplicatas exatas (M4)
+
+A busca de duplicatas é **desligada por padrão** e deve ser habilitada em **Filtros gerais — independentes do ambiente**. A busca:
+1. Faz uma nova enumeração somente leitura de metadados e agrupa arquivos por tamanho;
+2. Calcula **SHA-256 por stream apenas dos arquivos que compartilham tamanho**;
+3. Compara diretamente o conteúdo em blocos antes de declarar um grupo de duplicatas exatas;
+4. Mostra grupos e membros na aba `Duplicatas exatas — M4`. Os totais consideram todos os grupos; até 200 linhas de membros são renderizadas.
+
+A leitura do conteúdo é **somente leitura**, mas aumenta I/O e tempo de processamento. Um arquivo alterado entre o inventário e a leitura é rejeitado quando as verificações de tamanho/data detectam a mudança. Arquivos inacessíveis, links/reparse points e falhas tornam o resultado **parcial**, nunca uma conclusão de que não existem duplicatas. Não há garantias transacionais em ambientes com escrita concorrente ou alterações adversariais de metadados; não usar resultados como autorização para descartar.
+
+O indicador de bytes potencialmente redundantes assume **uma cópia conservada por grupo** e não equivale a espaço efetivamente liberado, economia monetária nem decisão de exclusão. O conteúdo de arquivos nunca é carregado inteiro na RAM; o índice de metadados e os grupos são mantidos em memória neste M4 (otimização para acervos enormes fica para M5/M6/M9). Hashes não são persistidos ou reutilizados automaticamente.
+
+### Limites
+
+O CLEAR ainda não exporta relatórios, persiste resultados em SQLite, permite decisões persistentes de usuário, faz quarentena, rollback ou migração. A análise lê metadados e, quando habilitada, conteúdo para SHA-256/comparação. Links identificados não são seguidos. Melhorias de layout e apresentações para grandes acervos estão planejadas em M5. Use apenas dados sintéticos em testes.
+
+## Restaurar, compilar, testar, executar
 
 ```powershell
 dotnet restore CLEAR.slnx
@@ -37,8 +52,8 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Veja `docs/architecture/Marco_M3_Parte3B.md` e `docs/tests/Roteiro_Validacao_M3_Parte3B.md`.
+Leia `docs/architecture/Marco_M4_Duplicatas_Exatas.md` e `docs/tests/Roteiro_Validacao_M4.md`.
 
 ## Estado
 
-M0–M2 estão na `main`; M3 Partes 1, 2 e 3A foram testadas pelo autor e integradas à `develop`. A Parte 3B está **em feature**, aguardando execução dos testes e validação manual no notebook. A `main` não foi alterada.
+M0–M2 estão na `main`; M3 Partes 1, 2, 3A e 3B estão aprovadas na `develop` (119 testes no notebook após M3). **M4 está em `feature/duplicatas-exatas-m4`, sem compilação/teste local nem aceite neste momento.** A `main` permanece inalterada.

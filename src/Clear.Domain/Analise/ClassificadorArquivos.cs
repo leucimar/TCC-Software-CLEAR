@@ -37,6 +37,24 @@ public sealed class ClassificadorArquivos
         });
     }
 
+    /// <summary>
+    /// Monta exclusivamente as verificações gerais escolhidas na interface.
+    /// Não ativa SHA-256: a deduplicação possui caso de uso próprio e opt-in.
+    /// </summary>
+    public static ClassificadorArquivos CriarComFiltrosSelecionados(
+        bool identificarVazios, bool identificarTemporarios,
+        int? diasSemModificacao, DateTimeOffset referencia)
+    {
+        var regras = new List<IRegraClassificacao>();
+        if (identificarVazios)
+            regras.Add(new RegraArquivoVazio());
+        if (identificarTemporarios)
+            regras.Add(new RegraNomeTemporarioBackup());
+        if (diasSemModificacao is int dias)
+            regras.Add(new RegraSinalTemporal(dias, referencia));
+        return new ClassificadorArquivos(regras);
+    }
+
     public ResultadoAnaliseArquivo Classificar(ArquivoInventariado arquivo)
     {
         ArgumentNullException.ThrowIfNull(arquivo);
