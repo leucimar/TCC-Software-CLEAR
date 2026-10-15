@@ -67,7 +67,7 @@ public sealed class DetectarDuplicatasExatasTests
             new FonteFalsa(a, b), leitor).ExecutarAsync(@"C:\Teste");
 
         Assert.HasCount(0, resultado.Grupos);
-        Assert.IsTrue(leitor.ChamadasComparacao > 0);
+        Assert.IsGreaterThan(leitor.ChamadasComparacao, 0);
     }
 
     [TestMethod]

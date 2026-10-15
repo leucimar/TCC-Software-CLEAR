@@ -1,4 +1,5 @@
 using Clear.Application.Inventario;
+using Clear.Application.Compatibilidade;
 using Clear.Application.Duplicatas;
 using Clear.Domain.Analise;
 using Clear.Domain.Compatibilidade;
@@ -61,10 +62,23 @@ public partial class Form1 : Form
         { Text = "SharePoint / OneDrive empresarial", AutoSize = true };
     private readonly ComboBox _subtipo = new()
         { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175 };
-    private readonly FlowLayoutPanel _painelVerificacoes = new()
-        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
+    // Todos os filtros permanecem visíveis, inclusive os de outro destino.
+    private readonly GroupBox _grupoAzure = new()
+        { Text = "Azure Files — SMB/Windows", Dock = DockStyle.Fill };
+    private readonly GroupBox _grupoSharePoint = new()
+        { Text = "SharePoint Online / OneDrive empresarial", Dock = DockStyle.Fill };
+    private readonly FlowLayoutPanel _painelAzure = new()
+        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
+          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
+    private readonly FlowLayoutPanel _painelSharePoint = new()
+        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
+          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
     private readonly Dictionary<string, CheckBox> _checks = new(StringComparer.Ordinal);
 
+    private readonly CheckBox _identificarVazios = new()
+        { Text = "Identificar arquivos vazios", AutoSize = true, Checked = true };
+    private readonly CheckBox _identificarTemporarios = new()
+        { Text = "Identificar nomes de backups e temporários", AutoSize = true, Checked = true };
     private readonly CheckBox _ativarSinalTemporal = new()
         { Text = "Última modificação há mais de", AutoSize = true };
     private readonly NumericUpDown _dias = new()
@@ -88,8 +102,8 @@ public partial class Form1 : Form
     private void MontarInterface()
     {
         Text = "CLEAR — Pré-análise de arquivos e duplicatas exatas (M4)";
-        MinimumSize = new Size(1040, 680);
-        Size = new Size(1350, 880);
+        MinimumSize = new Size(1190, 760);
+        Size = new Size(1500, 930);
 
         var principal = new TableLayoutPanel
         {
@@ -99,8 +113,8 @@ public partial class Form1 : Form
             Padding = new Padding(12)
         };
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
+        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 233));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
         principal.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
@@ -125,20 +139,21 @@ public partial class Form1 : Form
         topo.Controls.Add(_iniciar, 2, 1);
         topo.Controls.Add(_cancelar, 3, 1);
 
-        var seletor = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-        seletor.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 460));
-        seletor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        var grupoDestino = new GroupBox { Text = "Ambiente de destino (seleção exclusiva)", Dock = DockStyle.Fill };
+        // O ambiente escolhido é exclusivo. Os filtros continuam visíveis,
+        // mas as regras do ambiente não selecionado não podem ser habilitadas.
+        var grupoDestino = new GroupBox
+            { Text = "Ambiente foco — ao selecionar, o CLEAR sugere as verificações daquele destino", Dock = DockStyle.Fill };
         var radios = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-            WrapContents = false, Padding = new Padding(8)
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true, Padding = new Padding(8, 6, 8, 0)
         };
         radios.Controls.Add(_semDestino);
         radios.Controls.Add(_azure);
         radios.Controls.Add(_sharePoint);
-        var subtipoLinha = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
+        var subtipoLinha = new FlowLayoutPanel
+            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         subtipoLinha.Controls.Add(new Label
             { Text = "Subtipo empresarial:", AutoSize = true, Padding = new Padding(0, 5, 0, 0) });
         _subtipo.Items.AddRange(new object[] { "SharePoint Online", "OneDrive for Business" });
@@ -147,9 +162,44 @@ public partial class Form1 : Form
         radios.Controls.Add(subtipoLinha);
         grupoDestino.Controls.Add(radios);
 
-        var grupoRegras = new GroupBox
-            { Text = "Verificações do destino selecionado — marque individualmente", Dock = DockStyle.Fill };
-        grupoRegras.Controls.Add(_painelVerificacoes);
+        var painelFiltros = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
+            Padding = new Padding(0)
+        };
+        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 520));
+        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
+        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        var grupoGeral = new GroupBox
+            { Text = "Filtros gerais — independentes do ambiente", Dock = DockStyle.Fill };
+        var filtrosGerais = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
+            WrapContents = false, AutoScroll = true,
+            Padding = new Padding(8, 5, 8, 0)
+        };
+        filtrosGerais.Controls.Add(_identificarVazios);
+        filtrosGerais.Controls.Add(_identificarTemporarios);
+
+        var linhaTemporal = new FlowLayoutPanel
+            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+        linhaTemporal.Controls.Add(_ativarSinalTemporal);
+        linhaTemporal.Controls.Add(_dias);
+        linhaTemporal.Controls.Add(new Label
+            { Text = "dias", AutoSize = true, Padding = new Padding(0, 5, 0, 0) });
+        filtrosGerais.Controls.Add(linhaTemporal);
+
+        var linhaTamanho = new FlowLayoutPanel
+            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+        linhaTamanho.Controls.Add(_ativarTamanho);
+        linhaTamanho.Controls.Add(_limite);
+        _unidade.Items.AddRange(new object[] { "B", "KiB", "MiB", "GiB", "TiB" });
+        _unidade.SelectedIndex = 3;
+        linhaTamanho.Controls.Add(_unidade);
+        filtrosGerais.Controls.Add(linhaTamanho);
+        filtrosGerais.Controls.Add(_ativarDuplicatas);
+        grupoGeral.Controls.Add(filtrosGerais);
 
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
         {
@@ -157,34 +207,27 @@ public partial class Form1 : Form
             {
                 Text = definicao.Rotulo + " [" + definicao.Codigo + "]",
                 AutoSize = true,
-                Checked = true
+                Checked = false
             };
-            _dicas.SetToolTip(opcao, "Referência documental: " + definicao.FonteDocumental +
-                ". Indícios locais; não há consulta ao serviço remoto.");
+            _dicas.SetToolTip(opcao,
+                "Referência documental: " + definicao.FonteDocumental +
+                ". Pode desmarcar após aplicar as sugestões.");
             _checks.Add(definicao.Codigo, opcao);
+            if (definicao.Ambiente == AmbienteDestino.AzureFilesClassicoSmb)
+                _painelAzure.Controls.Add(opcao);
+            else
+                _painelSharePoint.Controls.Add(opcao);
         }
 
-        seletor.Controls.Add(grupoDestino, 0, 0);
-        seletor.Controls.Add(grupoRegras, 1, 0);
+        _grupoAzure.Controls.Add(_painelAzure);
+        _grupoSharePoint.Controls.Add(_painelSharePoint);
+        painelFiltros.Controls.Add(grupoGeral, 0, 0);
+        painelFiltros.Controls.Add(_grupoAzure, 1, 0);
+        painelFiltros.Controls.Add(_grupoSharePoint, 2, 0);
 
-        var grupoGeral = new GroupBox { Text = "Filtros gerais independentes do destino", Dock = DockStyle.Fill };
-        var filtros = new FlowLayoutPanel
-            { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true,
-              Padding = new Padding(8, 8, 8, 0) };
-        filtros.Controls.Add(_ativarSinalTemporal);
-        filtros.Controls.Add(_dias);
-        filtros.Controls.Add(new Label
-            { Text = "dias   |   ", AutoSize = true, Padding = new Padding(0, 5, 0, 0) });
-        filtros.Controls.Add(_ativarTamanho);
-        filtros.Controls.Add(_limite);
-        _unidade.Items.AddRange(new object[] { "B", "KiB", "MiB", "GiB", "TiB" });
-        _unidade.SelectedIndex = 3;
-        filtros.Controls.Add(_unidade);
-        filtros.Controls.Add(_ativarDuplicatas);
-        grupoGeral.Controls.Add(filtros);
         _dicas.SetToolTip(_ativarDuplicatas,
-            "Busca opcional: recenseia arquivos, agrupa por tamanho, calcula SHA-256 " +
-            "somente para candidatos e confirma igualdade byte a byte. Nenhum arquivo é alterado.");
+            "Leitura de conteúdo desativada por padrão. Ative expressamente para " +
+            "calcular SHA-256 e confirmar duplicatas byte a byte.");
         _dicas.SetToolTip(_ativarTamanho,
             "Filtro operacional: sinaliza arquivos maiores que o valor escolhido. " +
             "Não substitui nem altera os limites oficiais dos destinos.");
@@ -204,8 +247,8 @@ public partial class Form1 : Form
         areaOcorrencias.Controls.Add(_ocorrencias, 0, 1);
 
         principal.Controls.Add(topo, 0, 0);
-        principal.Controls.Add(seletor, 0, 1);
-        principal.Controls.Add(grupoGeral, 0, 2);
+        principal.Controls.Add(grupoDestino, 0, 1);
+        principal.Controls.Add(painelFiltros, 0, 2);
         principal.Controls.Add(_resumo, 0, 3);
         var abas = new TabControl { Dock = DockStyle.Fill };
         var abaInventario = new TabPage("Inventário e compatibilidade");
@@ -227,9 +270,18 @@ public partial class Form1 : Form
         principal.Controls.Add(_estado, 0, 6);
         Controls.Add(principal);
 
-        _semDestino.CheckedChanged += (_, _) => AtualizarPerfil();
-        _azure.CheckedChanged += (_, _) => AtualizarPerfil();
-        _sharePoint.CheckedChanged += (_, _) => AtualizarPerfil();
+        _semDestino.CheckedChanged += (_, _) =>
+        {
+            if (_semDestino.Checked) AplicarRecomendacoesDoDestino();
+        };
+        _azure.CheckedChanged += (_, _) =>
+        {
+            if (_azure.Checked) AplicarRecomendacoesDoDestino();
+        };
+        _sharePoint.CheckedChanged += (_, _) =>
+        {
+            if (_sharePoint.Checked) AplicarRecomendacoesDoDestino();
+        };
         _ativarSinalTemporal.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _selecionar.Click += (_, _) => SelecionarPasta();
@@ -275,33 +327,27 @@ public partial class Form1 : Form
                 foreach (DataGridViewCell celula in linha.Cells)
                     celula.ToolTipText = Convert.ToString(celula.Value) ?? "";
         };
-        AtualizarPerfil();
+        AplicarRecomendacoesDoDestino();
         AtualizarHabilitacao();
     }
 
-    private void AtualizarPerfil()
+    private void AplicarRecomendacoesDoDestino()
     {
-        _painelVerificacoes.SuspendLayout();
-        _painelVerificacoes.Controls.Clear();
+        // A seleção do ambiente aplica um preset apenas às regras oficiais.
+        // Nenhum filtro geral é ativado/desativado ao mudar de destino;
+        // especialmente SHA-256 permanece exclusivamente opt-in.
         AmbienteDestino? ambiente = _azure.Checked
             ? AmbienteDestino.AzureFilesClassicoSmb
-            : _sharePoint.Checked ? AmbienteDestino.SharePointOneDriveEmpresarial : null;
+            : _sharePoint.Checked
+                ? AmbienteDestino.SharePointOneDriveEmpresarial
+                : null;
 
-        if (ambiente is not null)
-        {
-            foreach (var definicao in CatalogoVerificacoes.Definicoes
-                         .Where(x => x.Ambiente == ambiente))
-                _painelVerificacoes.Controls.Add(_checks[definicao.Codigo]);
-        }
-        else
-        {
-            _painelVerificacoes.Controls.Add(new Label
-            {
-                Text = "Sem perfil: somente os filtros gerais serão executados.",
-                AutoSize = true, Padding = new Padding(8)
-            });
-        }
-        _painelVerificacoes.ResumeLayout();
+        var sugeridas = new HashSet<string>(
+            PerfisRecomendados.Para(ambiente), StringComparer.Ordinal);
+
+        foreach (var (codigo, opcao) in _checks)
+            opcao.Checked = sugeridas.Contains(codigo);
+
         AtualizarHabilitacao();
     }
 
@@ -309,7 +355,10 @@ public partial class Form1 : Form
     {
         var pronto = _cancelamento is null;
         _subtipo.Enabled = pronto && _sharePoint.Checked;
-        _painelVerificacoes.Enabled = pronto;
+        _grupoAzure.Enabled = pronto && _azure.Checked;
+        _grupoSharePoint.Enabled = pronto && _sharePoint.Checked;
+        _identificarVazios.Enabled = pronto;
+        _identificarTemporarios.Enabled = pronto;
         _dias.Enabled = pronto && _ativarSinalTemporal.Checked;
         _limite.Enabled = pronto && _ativarTamanho.Checked;
         _unidade.Enabled = pronto && _ativarTamanho.Checked;
@@ -375,6 +424,8 @@ public partial class Form1 : Form
         FiltroTamanhoPersonalizado? filtro;
         ClassificadorArquivos classificador;
         var usarSinalTemporal = _ativarSinalTemporal.Checked;
+        var identificarVazios = _identificarVazios.Checked;
+        var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
         var diasSelecionados = (int)_dias.Value;
 
@@ -382,9 +433,11 @@ public partial class Form1 : Form
         {
             configuracao = CriarConfiguracaoDestino();
             filtro = CriarFiltroPersonalizado();
-            classificador = usarSinalTemporal
-                ? ClassificadorArquivos.CriarComSinalTemporal(diasSelecionados, DateTimeOffset.UtcNow)
-                : new ClassificadorArquivos();
+            classificador = ClassificadorArquivos.CriarComFiltrosSelecionados(
+                identificarVazios,
+                identificarTemporarios,
+                usarSinalTemporal ? diasSelecionados : null,
+                DateTimeOffset.UtcNow);
         }
         catch (Exception ex) when (ex is ArgumentException or OverflowException or InvalidOperationException)
         {
@@ -403,6 +456,8 @@ public partial class Form1 : Form
         _sharePoint.Enabled = false;
         _ativarSinalTemporal.Enabled = false;
         _ativarTamanho.Enabled = false;
+        _identificarVazios.Enabled = false;
+        _identificarTemporarios.Enabled = false;
         AtualizarHabilitacao();
         _grade.DataSource = null;
         _gradeDuplicatas.DataSource = null;
@@ -551,6 +606,8 @@ public partial class Form1 : Form
             _sharePoint.Enabled = true;
             _ativarSinalTemporal.Enabled = true;
             _ativarTamanho.Enabled = true;
+            _identificarVazios.Enabled = true;
+            _identificarTemporarios.Enabled = true;
             AtualizarHabilitacao();
         }
     }

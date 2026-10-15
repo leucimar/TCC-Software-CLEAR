@@ -21,9 +21,15 @@ Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assi
 
 Escolha um único cenário: Azure Files clássico via SMB/Windows, SharePoint Online, OneDrive for Business ou *Sem destino*. As verificações de destino podem ser habilitadas/desabilitadas individualmente. Azure usa caracteres de nome e 4 TiB; SharePoint/OneDrive empresarial usam caracteres de nome, espaço inicial/final, sequência `_vti_` e 250 GiB (base binária), sempre conforme o recorte documental aprovado. O filtro pessoal de tamanho funciona sem perfil e não substitui o limite oficial.
 
+## Escolha dos filtros e sugestões por destino
+
+Ao abrir o CLEAR, **todas as checkboxes** ficam visíveis em três grupos: **Filtros gerais**, **Azure Files** e **SharePoint/OneDrive empresarial**. O destino continua exclusivo (incluindo a opção *Sem destino*). Ao selecionar Azure Files ou SharePoint/OneDrive, o programa marca automaticamente **todas as verificações locais aprovadas para aquele ambiente** (duas para Azure ou cinco para SharePoint/OneDrive). O outro grupo permanece visível, porém desabilitado. Após a sugestão, o operador pode desmarcar individualmente as regras do ambiente escolhido; ao trocar o destino, é aplicado novamente o conjunto sugerido para o novo perfil.
+
+As classificações gerais de **arquivos vazios** e **backups/temporários** começam marcadas para manter o comportamento do M3; agora também podem ser desmarcadas individualmente. A análise temporal, o filtro pessoal de tamanho e a detecção SHA-256 iniciam **desmarcados**. A seleção de destino **não altera os filtros gerais** e jamais ativa SHA-256 automaticamente, pois ele exige leitura do conteúdo.
+
 ### Duplicatas exatas (M4)
 
-A busca de duplicatas é **desligada por padrão** e deve ser habilitada em **Filtros gerais independentes do destino**. A busca:
+A busca de duplicatas é **desligada por padrão** e deve ser habilitada em **Filtros gerais — independentes do ambiente**. A busca:
 1. Faz uma nova enumeração somente leitura de metadados e agrupa arquivos por tamanho;
 2. Calcula **SHA-256 por stream apenas dos arquivos que compartilham tamanho**;
 3. Compara diretamente o conteúdo em blocos antes de declarar um grupo de duplicatas exatas;
