@@ -22,6 +22,21 @@ public sealed class ClassificadorArquivos
         _regras = Array.AsReadOnly(itens);
     }
 
+    /// <summary>
+    /// Ativa a análise temporal mediante decisão explícita do operador.
+    /// A referência é congelada uma única vez para toda a execução.
+    /// </summary>
+    public static ClassificadorArquivos CriarComSinalTemporal(
+        int diasSemModificacao, DateTimeOffset referencia)
+    {
+        return new ClassificadorArquivos(new IRegraClassificacao[]
+        {
+            new RegraArquivoVazio(),
+            new RegraNomeTemporarioBackup(),
+            new RegraSinalTemporal(diasSemModificacao, referencia)
+        });
+    }
+
     public ResultadoAnaliseArquivo Classificar(ArquivoInventariado arquivo)
     {
         ArgumentNullException.ThrowIfNull(arquivo);
