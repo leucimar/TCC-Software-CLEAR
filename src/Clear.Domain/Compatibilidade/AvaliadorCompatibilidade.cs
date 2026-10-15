@@ -43,7 +43,8 @@ public sealed class AvaliadorCompatibilidade
             }
 
             var nome = Path.GetFileName(entrada.CaminhoCompleto
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                ?? string.Empty;
             var resultado = definicao.Codigo switch
             {
                 "AZF-NOME-001" or "SPO-NOME-001" =>
