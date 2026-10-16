@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Clear.Infrastructure.Historico;
+using Clear.Infrastructure.Quarentena;
 
 namespace Clear.Desktop;
 
@@ -11,6 +12,13 @@ public sealed class FormDetalhesHistoricoM6 : Form
 {
     private readonly string _id;
     private readonly string _banco;
+    private readonly ResumoExecucaoHistoricaM6 _execucao;
+    private readonly Button _quarentena = new()
+    {
+        Text = "Revisar envio à quarentena (M7)", AutoSize = true
+    };
+    private readonly DataGridView _auditoriaQuarentena = Grade();
+    private readonly Button _atualizarAuditoria = new() { Text = "Atualizar auditoria", AutoSize = true };
     private readonly long _totalEntradas;
     private readonly DataGridView _entradas = Grade();
     private readonly DataGridView _duplicatas = Grade();
@@ -42,6 +50,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         ArgumentNullException.ThrowIfNull(execucao);
         _id = execucao.Id;
         _banco = banco;
+        _execucao = execucao;
         _totalEntradas = execucao.EntradasPersistidas;
         Text = "CLEAR — Consulta histórica (somente leitura) — " +
                execucao.InicioUtc.ToString("dd/MM/yyyy HH:mm");
@@ -76,6 +85,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         navegacao.Controls.Add(_anterior);
         navegacao.Controls.Add(_proxima);
         navegacao.Controls.Add(_paginaLabel);
+        navegacao.Controls.Add(_quarentena);
         areaEntradas.Controls.Add(navegacao, 0, 0);
         areaEntradas.Controls.Add(_entradas, 0, 1);
         areaEntradas.Controls.Add(_detalhes, 0, 2);
@@ -98,6 +108,18 @@ public sealed class FormDetalhesHistoricoM6 : Form
         var abaOcorrencias = new TabPage("Ocorrências registradas");
         abaOcorrencias.Controls.Add(_ocorrencias);
         abas.TabPages.Add(abaOcorrencias);
+
+        var abaAuditoria = new TabPage("Auditoria da quarentena — M7");
+        var painelAuditoria = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
+        painelAuditoria.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        painelAuditoria.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        barraAuditoria.Controls.Add(_atualizarAuditoria);
+        painelAuditoria.Controls.Add(barraAuditoria, 0, 0);
+        painelAuditoria.Controls.Add(_auditoriaQuarentena, 0, 1);
+        abaAuditoria.Controls.Add(painelAuditoria);
+        abas.TabPages.Add(abaAuditoria);
+
         raiz.Controls.Add(abas, 0, 1);
         Controls.Add(raiz);
 
@@ -109,11 +131,14 @@ public sealed class FormDetalhesHistoricoM6 : Form
             await CarregarDuplicatasAsync(_paginaDuplicatas + 1);
 
         _entradas.SelectionChanged += (_, _) => ExibirEvidenciasSelecionadas();
+        _quarentena.Click += async (_, _) => await RevisarQuarentenaAsync();
+        _atualizarAuditoria.Click += async (_, _) => await AtualizarAuditoriaAsync();
         Shown += async (_, _) =>
         {
             await CarregarEntradasAsync(0);
             await CarregarDuplicatasAsync(0);
             await CarregarOcorrenciasAsync();
+            await AtualizarAuditoriaAsync();
         };
     }
 
@@ -185,6 +210,84 @@ public sealed class FormDetalhesHistoricoM6 : Form
         {
             _detalhes.Text = "Falha ao ler ocorrências: " + ex.Message;
         }
+    }
+
+    private async Task RevisarQuarentenaAsync()
+    {
+        if (_entradas.CurrentRow?.DataBoundItem is not EntradaHistoricaM6 item ||
+            item.Tipo != "Arquivo")
+        {
+            MessageBox.Show(this, "Selecione um arquivo histórico, não uma pasta.",
+                "CLEAR — Quarentena M7", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _quarentena.Enabled = false;
+        try
+        {
+            // Etapa 1: somente pré-verificação. Não move nem registra ações.
+            var plano = await ServicoQuarentenaM7.PrepararAsync(
+                item, _execucao, ServicoQuarentenaM7.RaizPadrao);
+
+            // Etapa 2: a mudança de localização exige confirmação humana explícita.
+            // O botão padrão é NÃO; fechar a janela também cancela.
+            var consentimento = MessageBox.Show(this,
+                "CONFIRMA ENVIO À QUARENTENA? ESTA AÇÃO MOVE O ARQUIVO." +
+                Environment.NewLine + Environment.NewLine +
+                "ORIGEM: " + plano.CaminhoOriginal + Environment.NewLine +
+                "DESTINO: " + plano.CaminhoDestino + Environment.NewLine +
+                "TAMANHO: " + plano.TamanhoBytes + " bytes" + Environment.NewLine +
+                "SHA-256: " + plano.Sha256Hex + Environment.NewLine +
+                "ANÁLISE: " + plano.IdExecucao + Environment.NewLine + Environment.NewLine +
+                "A quarentena não é exclusão. A restauração automatizada será " +
+                "desenvolvida no M8. Use SOMENTE arquivos sintéticos neste estágio.",
+                "CLEAR — Confirmação humana obrigatória",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (consentimento != DialogResult.Yes)
+                return;
+
+            var registro = await ServicoQuarentenaM7.ExecutarAsync(
+                plano, confirmacaoHumanaExplicita: true,
+                ServicoQuarentenaM7.BancoAuditoriaPadrao);
+            MessageBox.Show(this,
+                "Arquivo enviado à quarentena. Operação registrada em SQLite." +
+                Environment.NewLine + "Operação: " + registro.IdOperacao +
+                Environment.NewLine + "Destino: " + registro.CaminhoDestino +
+                Environment.NewLine + "Não exclua o arquivo de quarentena nem o banco de auditoria.",
+                "CLEAR — Quarentena M7", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            await AtualizarAuditoriaAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Negar a operação não pode alterar o arquivo original.
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this,
+                "A movimentação não foi autorizada/concluída com segurança: " +
+                ex.Message + Environment.NewLine +
+                "Confira a auditoria M7 antes de qualquer nova tentativa.",
+                "CLEAR — Quarentena M7", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally { _quarentena.Enabled = true; }
+    }
+
+    private async Task AtualizarAuditoriaAsync()
+    {
+        _atualizarAuditoria.Enabled = false;
+        try
+        {
+            var lista = await ServicoQuarentenaM7.ConsultarAsync(
+                ServicoQuarentenaM7.BancoAuditoriaPadrao, _id);
+            _auditoriaQuarentena.DataSource = lista.ToList();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Falha ao consultar auditoria: " + ex.Message,
+                "CLEAR — Auditoria M7", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { _atualizarAuditoria.Enabled = true; }
     }
 
     private void ExibirEvidenciasSelecionadas()
