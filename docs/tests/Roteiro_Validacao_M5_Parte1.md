@@ -20,8 +20,12 @@ Caso a feature já exista localmente, use `git switch feature/relatorios-complet
 
 ## 2. Preparar duas pastas sintéticas separadas
 
+**Padrão adotado para os testes:** `C:\Temp`. O seletor do CLEAR abre nesse caminho quando a pasta existe, mas permite qualquer diretório. Se não existir, abre inicialmente na pasta do usuário; o script abaixo cria `C:\Temp` no desktop. Cada teste gera uma pasta exclusiva com GUID, separando `Acervo` e `Relatorios`. Caso o Windows negue a criação de `C:\Temp`, crie-a manualmente com as permissões apropriadas, sem alterar pastas existentes.
+
 ```powershell
-$base = Join-Path $env:TEMP ("CLEAR_M5_Manual_" + [guid]::NewGuid().ToString("N"))
+$pastaPadrao = "C:\Temp"
+New-Item -ItemType Directory -Path $pastaPadrao -Force | Out-Null
+$base = Join-Path $pastaPadrao ("CLEAR_M5_Manual_" + [guid]::NewGuid().ToString("N"))
 $raiz = Join-Path $base "Acervo"
 $saida = Join-Path $base "Relatorios"
 New-Item -ItemType Directory -Path (Join-Path $raiz "Copia") -Force | Out-Null

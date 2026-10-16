@@ -405,13 +405,17 @@ public partial class Form1 : Form
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
     }
 
+    private static string PastaInicialDeSelecao =>
+        Directory.Exists(@"C:\Temp") ? @"C:\Temp" : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     private void SelecionarPasta()
     {
         using var dialogo = new FolderBrowserDialog
         {
             Description = "Selecione uma pasta de testes sintéticos para análise somente leitura.",
             UseDescriptionForTitle = true,
-            ShowNewFolderButton = false
+            ShowNewFolderButton = false,
+            SelectedPath = Directory.Exists(_caminho.Text) ? _caminho.Text : PastaInicialDeSelecao
         };
         if (dialogo.ShowDialog(this) == DialogResult.OK)
             _caminho.Text = dialogo.SelectedPath;
@@ -488,7 +492,8 @@ public partial class Form1 : Form
                     Description = "Escolha uma pasta de saída FORA do acervo analisado. " +
                                   "Os relatórios incluem caminhos e possíveis dados sensíveis.",
                     UseDescriptionForTitle = true,
-                    ShowNewFolderButton = true
+                    ShowNewFolderButton = true,
+                    SelectedPath = PastaInicialDeSelecao
                 };
                 if (pastaSaida.ShowDialog(this) != DialogResult.OK)
                     return;
