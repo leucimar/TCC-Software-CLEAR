@@ -1,44 +1,28 @@
 # CLEAR — TCC
 
-Aplicativo desktop gratuito em C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não migra, renomeia, move ou descarta arquivos.**
+Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não realiza migração nem modifica o acervo analisado.**
 
 ## Tecnologias
 
-C#/.NET 10 LTS (SDK 10.0.402), Windows Forms, projetos Domain/Application/Infrastructure/Desktop, MSTest, Git/GitHub. Sem ferramentas pagas.
+.NET 10 LTS (SDK 10.0.402), WinForms, quatro camadas (Domain, Application, Infrastructure, Desktop), MSTest e **SQLite via Microsoft.Data.Sqlite 10.0.0** (dependência NuGet gratuita, restaurada por `dotnet restore`).
 
-## Funcionalidades disponíveis
+## Funcionalidades
 
-- **M2:** inventário seguro de metadados de arquivos;
-- **M3:** classificação de vazios, backups/temporários, sinais temporais opcionais, contagem de subpastas e perfis de compatibilidade exclusivos Azure Files SMB/Windows ou SharePoint Online/OneDrive for Business;
-- **M4:** detecção opt-in de duplicatas exatas com pré-filtro por tamanho, SHA-256 em streaming e comparação byte a byte; grupos visualizados em aba própria;
-- **M5 — Parte 1 (em feature):** geração opcional de relatório CSV completo por streaming, resumo JSON com parâmetros/totais/ocorrências e CSV de grupos M4 quando a deduplicação é executada.
+- M2: inventário de arquivos/diretórios, tamanhos e ocorrências;
+- M3: classificação de arquivos vazios, backups/temporários e sinais temporais; verificações independentes de compatibilidade para Azure Files SMB/Windows ou SharePoint Online/OneDrive empresarial; limite de tamanho personalizado;
+- M4: detecção opt-in de duplicatas exatas por tamanho, SHA-256 em streaming e comparação byte a byte;
+- M5 Parte 1: exportação CSV completa (com filtros de achados), resumo JSON e CSV de membros de grupos M4;
+- **M6 Parte 1 (feature em validação): histórico SQLite opcional, persistente e transacional**, armazenando entradas classificadas, parâmetros da análise, evidências, verificações, ocorrências e grupos confirmados M4. Aba com as 30 execuções recentes.
 
-### Relatórios M5
+## Histórico SQLite (M6)
 
-Marque **Exportar relatório completo (CSV + JSON — M5)** na interface e escolha **quais linhas serão exportadas**:
-- Todas as entradas (arquivos e subpastas, mesmo além da amostra visual de 1.000);
-- Somente indícios gerais;
-- Somente incompatibilidades documentadas pelas regras habilitadas;
-- Somente acima do limite pessoal;
-- Somente achados: união das três situações anteriores.
+Marque **Salvar histórico local SQLite (M6; não reutiliza classificações)** nos filtros gerais. O histórico é gravado em `%LOCALAPPDATA%\CLEAR\historico.sqlite3`, fora do acervo de testes `C:\Temp`. Os dados são escritos em uma transação por execução; interrupção/falha antes da conclusão causa rollback. Falhas individuais enumeradas que permitam concluir geram status **Parcial**, sem sinalizar análise integral.
 
-Ao iniciar a análise, escolha uma **pasta de saída existente fora da pasta analisada**. Saída em CSV UTF-8 com BOM, separador `;`, escape de aspas e neutralização de fórmulas de planilhas. O JSON inclui contagens globais, configurações, horários UTC, avisos de incompletude e, se M4 estiver ativado, seus indicadores. O CSV de duplicatas lista todos os membros dos grupos, independentemente do limite de 200 linhas da aba visual.
+A aba **Histórico SQLite — M6** permite atualizar e consultar resumos de execuções passadas, inclusive após fechar o programa. Todos os registros de entradas são persistidos, mesmo além da amostra de 1.000 linhas. A exportação M5 continua opcional e pode ser usada ao mesmo tempo, sem uma nova varredura apenas para salvar os dados.
 
-O exportador recebe cada entrada durante o **inventário M3 original**, sem varredura adicional de metadados apenas para salvar o relatório. M4, se habilitado, já exige sua própria varredura e leitura de conteúdo. As linhas exportadas podem ser filtradas, mas o resumo sempre considera o inventário completo obtido.
+**Importante:** o banco pode conter nomes, caminhos e hashes confidenciais. O SQLite **não criptografa os registros automaticamente**. O histórico ainda não é cache; o software **não reaproveita classificações ou hashes** de execuções anteriores. A otimização depende de estudo de invalidação e medições em M6 posterior/M9. A aba mostra resumos; pesquisa avançada de itens históricos fica para um próximo incremento.
 
-A saída recebe nomes únicos com data e GUID, é publicada após conclusão e tem arquivos temporários removidos em caso de falha/cancelamento. **A geração cria arquivos de relatório na pasta indicada**, mas não altera o acervo analisado.
-
-### Segurança e limites
-
-- Nenhuma operação de migração, edição, movimentação ou exclusão do acervo.
-- O conteúdo só é lido para SHA-256 quando solicitado. Duplicatas exatas não autorizam descarte.
-- Relatórios podem conter caminhos completos e hashes sensíveis; trate-os com cuidado.
-- A ausência de incompatibilidade detectada não garante migração.
-- Exportação não é armazenamento SQLite, nem mecanismo de consultas persistentes/decisões humanas. **Reuso de classificações e hashes anteriores continua em estudo para M6/M9**, condicionado à segurança e medições.
-- A memória usada pelo inventário visual é limitada por amostra; o índice de caminhos do M4 continua em RAM, e consultas/paginação sofisticadas ficam para incrementos posteriores.
-- Teste apenas pastas sintéticas até concluir a validação.
-
-## Compilar, testar e executar
+## Compilar e testar
 
 ```powershell
 dotnet restore CLEAR.slnx
@@ -47,8 +31,8 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Veja `docs/architecture/Marco_M5_Relatorios_Parte1.md` e `docs/tests/Roteiro_Validacao_M5_Parte1.md`.
+Roteiro: `docs/tests/Roteiro_Validacao_M6_Parte1.md`.
 
 ## Estado
 
-M0–M2 em `main`; M3 e M4 integrados à `develop`. M4 teve validação manual e a última captura do teste automatizado antes da correção mostrava 146/147; asserção foi corrigida em seguida, mas a execução completa final não foi registrada nesta conversa. **M5 Parte 1 em `feature/relatorios-completos-m5`, não testada localmente nem integrada.** `main` permanece inalterada.
+M0–M2 em `main`; M3, M4 e M5 Parte 1 foram integrados e validados na `develop` (156 testes, zero avisos após M5). M6 Parte 1 está em `feature/historico-sqlite-m6`, **ainda não validada localmente nem integrada**. A `main` permanece inalterada.

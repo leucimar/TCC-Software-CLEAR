@@ -7,6 +7,7 @@ using Clear.Domain.Inventario;
 using Clear.Infrastructure.Inventario;
 using Clear.Infrastructure.Duplicatas;
 using Clear.Infrastructure.Relatorios;
+using Clear.Infrastructure.Historico;
 
 namespace Clear.Desktop;
 
@@ -48,6 +49,29 @@ public partial class Form1 : Form
     private readonly ComboBox _filtroRelatorio = new()
     {
         DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, Enabled = false
+    };
+    private readonly CheckBox _salvarHistorico = new()
+    {
+        Text = "Salvar histórico local SQLite (M6; não reutiliza classificações)",
+        AutoSize = true, Checked = false
+    };
+    private readonly Button _atualizarHistorico = new()
+    {
+        Text = "Atualizar histórico", AutoSize = true
+    };
+    private readonly Label _infoHistorico = new()
+    {
+        Dock = DockStyle.Fill,
+        Text = "Histórico opcional armazenado em %LOCALAPPDATA%\\CLEAR\\historico.sqlite3.",
+        AutoEllipsis = true
+    };
+    private readonly DataGridView _gradeHistorico = new()
+    {
+        Dock = DockStyle.Fill, ReadOnly = true, MultiSelect = false,
+        AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        RowHeadersVisible = false,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect
     };
     private readonly DataGridView _gradeDuplicatas = new()
     {
@@ -111,7 +135,7 @@ public partial class Form1 : Form
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Inventário, duplicatas e relatórios (M5)";
+        Text = "CLEAR — Inventário, duplicatas, relatórios e histórico (M6)";
         MinimumSize = new Size(1190, 760);
         Size = new Size(1500, 930);
 
@@ -236,6 +260,7 @@ public partial class Form1 : Form
         _filtroRelatorio.SelectedIndex = 0;
         linhaFiltroRelatorio.Controls.Add(_filtroRelatorio);
         filtrosGerais.Controls.Add(linhaFiltroRelatorio);
+        filtrosGerais.Controls.Add(_salvarHistorico);
         grupoGeral.Controls.Add(filtrosGerais);
 
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
@@ -302,6 +327,23 @@ public partial class Form1 : Form
         abaDuplicatas.Controls.Add(painelDuplicatas);
         abas.TabPages.Add(abaInventario);
         abas.TabPages.Add(abaDuplicatas);
+
+        var abaHistorico = new TabPage("Histórico SQLite — M6");
+        var painelHistorico = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3
+        };
+        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        var botoesHistorico = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        botoesHistorico.Controls.Add(_atualizarHistorico);
+        painelHistorico.Controls.Add(botoesHistorico, 0, 0);
+        painelHistorico.Controls.Add(_gradeHistorico, 0, 1);
+        painelHistorico.Controls.Add(_infoHistorico, 0, 2);
+        abaHistorico.Controls.Add(painelHistorico);
+        abas.TabPages.Add(abaHistorico);
+
         principal.Controls.Add(abas, 0, 4);
         principal.Controls.Add(areaOcorrencias, 0, 5);
         principal.Controls.Add(_estado, 0, 6);
@@ -322,6 +364,7 @@ public partial class Form1 : Form
         _ativarSinalTemporal.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
+        _atualizarHistorico.Click += async (_, _) => await AtualizarHistoricoAsync();
         _selecionar.Click += (_, _) => SelecionarPasta();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
@@ -403,6 +446,37 @@ public partial class Form1 : Form
         _ativarDuplicatas.Enabled = pronto;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
+        _salvarHistorico.Enabled = pronto;
+        _atualizarHistorico.Enabled = pronto;
+    }
+
+    private async Task AtualizarHistoricoAsync()
+    {
+        _atualizarHistorico.Enabled = false;
+        try
+        {
+            var registros = await SessaoHistoricoSqliteM6.ConsultarUltimasAsync(
+                SessaoHistoricoSqliteM6.CaminhoPadrao);
+            _gradeHistorico.DataSource = registros.Select(x => new
+            {
+                x.InicioUtc, x.FimUtc, x.Estado, x.DiretorioRaiz,
+                x.QuantidadeArquivos, x.QuantidadeDiretorios, x.TotalBytes,
+                x.EntradasPersistidas, x.GruposDuplicatas, x.TotalOcorrencias,
+                x.Id
+            }).ToList();
+            _infoHistorico.Text =
+                $"{registros.Count} execução(ões) exibida(s), até 30. Banco: " +
+                SessaoHistoricoSqliteM6.CaminhoPadrao +
+                " | Consulta somente leitura; classificações antigas não são reutilizadas.";
+        }
+        catch (Exception ex)
+        {
+            _infoHistorico.Text = "Não foi possível consultar histórico: " + ex.Message;
+        }
+        finally
+        {
+            _atualizarHistorico.Enabled = _cancelamento is null;
+        }
     }
 
     private static string PastaInicialDeSelecao =>
@@ -472,9 +546,11 @@ public partial class Form1 : Form
         var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
         var exportarRelatorio = _exportarRelatorio.Checked;
+        var salvarHistorico = _salvarHistorico.Checked;
         var diasSelecionados = (int)_dias.Value;
         var referenciaTemporalUtc = DateTimeOffset.UtcNow;
         ExportadorRelatoriosM5? exportador = null;
+        SessaoHistoricoSqliteM6? historico = null;
 
         try
         {
@@ -537,12 +613,38 @@ public partial class Form1 : Form
 
         try
         {
+            if (salvarHistorico)
+            {
+                var filtrosAtivos = new List<string>();
+                if (identificarVazios) filtrosAtivos.Add("ArquivoVazio");
+                if (identificarTemporarios) filtrosAtivos.Add("CopiaBackupOuTemporario");
+                if (usarSinalTemporal) filtrosAtivos.Add("SinalTemporal");
+                if (filtro is not null) filtrosAtivos.Add("TamanhoPersonalizado");
+                if (usarDuplicatas) filtrosAtivos.Add("DuplicatasSHA256");
+                var parametros = new ParametrosHistoricoM6(
+                    filtrosAtivos,
+                    configuracao.Perfil?.Ambiente.ToString(),
+                    configuracao.Perfil?.Subtipo?.ToString(),
+                    configuracao.CodigosHabilitados,
+                    filtro?.LimiteBytes,
+                    usarSinalTemporal ? diasSelecionados : null,
+                    usarSinalTemporal ? referenciaTemporalUtc : null,
+                    usarDuplicatas);
+
+                historico = await SessaoHistoricoSqliteM6.IniciarAsync(
+                    pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);
+            }
+
+            IObservadorInventario? observador = exportador is not null && historico is not null
+                ? new ObservadorInventarioComposto(exportador, historico)
+                : (IObservadorInventario?)exportador ?? historico;
+
             var casoDeUso = new InventariarDiretorio(
                 new FonteInventarioSistemaArquivos(), limiteAmostra: 1000,
                 classificador: classificador,
                 configuracaoCompatibilidade: configuracao,
                 filtroPersonalizado: filtro,
-                observador: exportador);
+                observador: observador);
             var resultado = await Task.Run(
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
 
@@ -675,6 +777,15 @@ public partial class Form1 : Form
                     "\n\nOs caminhos exportados podem ser sensíveis. Guarde os relatórios com cuidado.",
                     "CLEAR — Relatórios M5", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+
+            if (historico is not null)
+            {
+                _estado.Text = "Confirmando transação SQLite da análise...";
+                await historico.ConcluirAsync(resultado, resultadoDuplicatas, token);
+                _estado.Text = $"Histórico M6 salvo: {historico.EntradasPersistidas:N0} entrada(s). " +
+                    "Sem reutilização de classificações. Nenhum arquivo original alterado.";
+                await AtualizarHistoricoAsync();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -694,6 +805,8 @@ public partial class Form1 : Form
             _cancelamento = null;
             if (exportador is not null)
                 await exportador.DisposeAsync();
+            if (historico is not null)
+                await historico.DisposeAsync();
             _selecionar.Enabled = true;
             _iniciar.Enabled = true;
             _cancelar.Enabled = false;
