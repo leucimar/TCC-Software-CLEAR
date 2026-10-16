@@ -19,6 +19,10 @@ public sealed class FormDetalhesHistoricoM6 : Form
     };
     private readonly DataGridView _auditoriaQuarentena = Grade();
     private readonly Button _atualizarAuditoria = new() { Text = "Atualizar auditoria", AutoSize = true };
+    private readonly Button _restaurarArquivo = new()
+    {
+        Text = "Revisar restauração (M8)", AutoSize = true
+    };
     private readonly long _totalEntradas;
     private readonly DataGridView _entradas = Grade();
     private readonly DataGridView _duplicatas = Grade();
@@ -115,6 +119,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         painelAuditoria.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill };
         barraAuditoria.Controls.Add(_atualizarAuditoria);
+        barraAuditoria.Controls.Add(_restaurarArquivo);
         painelAuditoria.Controls.Add(barraAuditoria, 0, 0);
         painelAuditoria.Controls.Add(_auditoriaQuarentena, 0, 1);
         abaAuditoria.Controls.Add(painelAuditoria);
@@ -133,6 +138,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         _entradas.SelectionChanged += (_, _) => ExibirEvidenciasSelecionadas();
         _quarentena.Click += async (_, _) => await RevisarQuarentenaAsync();
         _atualizarAuditoria.Click += async (_, _) => await AtualizarAuditoriaAsync();
+        _restaurarArquivo.Click += async (_, _) => await RevisarRestauracaoAsync();
         Shown += async (_, _) =>
         {
             await CarregarEntradasAsync(0);
@@ -239,8 +245,8 @@ public sealed class FormDetalhesHistoricoM6 : Form
                 "TAMANHO: " + plano.TamanhoBytes + " bytes" + Environment.NewLine +
                 "SHA-256: " + plano.Sha256Hex + Environment.NewLine +
                 "ANÁLISE: " + plano.IdExecucao + Environment.NewLine + Environment.NewLine +
-                "A quarentena não é exclusão. A restauração automatizada será " +
-                "desenvolvida no M8. Use SOMENTE arquivos sintéticos neste estágio.",
+                "A quarentena não é exclusão. A restauração do M8 está disponível " +
+                "na aba de auditoria, mediante outra confirmação. Use somente dados sintéticos.",
                 "CLEAR — Confirmação humana obrigatória",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
@@ -288,6 +294,76 @@ public sealed class FormDetalhesHistoricoM6 : Form
                 "CLEAR — Auditoria M7", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally { _atualizarAuditoria.Enabled = true; }
+    }
+
+    private async Task RevisarRestauracaoAsync()
+    {
+        if (_auditoriaQuarentena.CurrentRow?.DataBoundItem is not RegistroQuarentenaM7 registro)
+        {
+            MessageBox.Show(this, "Selecione uma movimentação na auditoria M7.",
+                "CLEAR — Restauração M8", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (registro.Estado != "EmQuarentena")
+        {
+            MessageBox.Show(this,
+                "Somente operações com estado EmQuarentena podem ser restauradas. " +
+                "Operações pendentes exigem reconciliação manual, não restauração automática.",
+                "CLEAR — Restauração M8", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        _restaurarArquivo.Enabled = false;
+        try
+        {
+            // Preparação não destrutiva: confere existência, tamanho, SHA-256
+            // e se o caminho original continua livre.
+            var plano = await ServicoRestauracaoM8.PrepararAsync(
+                registro.IdOperacao, ServicoQuarentenaM7.BancoAuditoriaPadrao);
+
+            var resposta = MessageBox.Show(this,
+                "CONFIRMA A RESTAURAÇÃO DESTE ARQUIVO?" + Environment.NewLine +
+                "Isso irá MOVER o arquivo de volta, alterando sua localização." +
+                Environment.NewLine + Environment.NewLine +
+                "QUARENTENA: " + plano.CaminhoQuarentena + Environment.NewLine +
+                "DESTINO ORIGINAL: " + plano.CaminhoOriginal + Environment.NewLine +
+                "TAMANHO: " + plano.TamanhoBytes + " bytes" + Environment.NewLine +
+                "SHA-256: " + plano.Sha256Hex + Environment.NewLine +
+                "OPERAÇÃO: " + plano.IdOperacao + Environment.NewLine + Environment.NewLine +
+                "Não haverá substituição de arquivos existentes. " +
+                "Use apenas dados sintéticos até concluir a validação do M8.",
+                "CLEAR — Confirmação humana obrigatória",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (resposta != DialogResult.Yes)
+                return;
+
+            var resultado = await ServicoRestauracaoM8.RestaurarAsync(
+                plano, true, ServicoQuarentenaM7.BancoAuditoriaPadrao);
+            MessageBox.Show(this,
+                "Arquivo restaurado com sucesso." + Environment.NewLine +
+                "Destino: " + resultado.CaminhoOriginal + Environment.NewLine +
+                "Operação: " + resultado.IdOperacao + Environment.NewLine +
+                "Status na auditoria: " + resultado.Estado,
+                "CLEAR — Restauração M8", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            // Responder Não não movimenta nem altera registro.
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this,
+                "Restauração não concluída: " + ex.Message + Environment.NewLine +
+                "Verifique a auditoria. Em caso de status RestauracaoPendente, " +
+                "não tente repetir a operação sem investigação.",
+                "CLEAR — Restauração M8", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            await AtualizarAuditoriaAsync();
+            _restaurarArquivo.Enabled = true;
+        }
     }
 
     private void ExibirEvidenciasSelecionadas()
