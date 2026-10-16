@@ -161,6 +161,9 @@ public sealed class HistoricoSqliteM6Tests
     public async Task BancoComVersaoFuturaNaoEhAbertoParaEscrita()
     {
         using var pasta = new PastaSintetica();
+        // Este cenário cria o banco diretamente, sem passar pelo IniciarAsync
+        // (que normalmente cria a pasta pai). Preparar a pasta do fixture.
+        Directory.CreateDirectory(Path.GetDirectoryName(pasta.Banco)!);
         await using (var conn = Abrir(pasta.Banco))
         {
             await conn.OpenAsync();
