@@ -59,6 +59,12 @@ public partial class Form1 : Form
     {
         Text = "Atualizar histórico", AutoSize = true
     };
+    private readonly Button _consultarDetalhesHistorico = new()
+    {
+        Text = "Consultar detalhes da execução", AutoSize = true
+    };
+    private IReadOnlyList<ResumoExecucaoHistoricaM6> _execucoesHistoricas =
+        Array.Empty<ResumoExecucaoHistoricaM6>();
     private readonly Label _infoHistorico = new()
     {
         Dock = DockStyle.Fill,
@@ -338,6 +344,7 @@ public partial class Form1 : Form
         painelHistorico.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         var botoesHistorico = new FlowLayoutPanel { Dock = DockStyle.Fill };
         botoesHistorico.Controls.Add(_atualizarHistorico);
+        botoesHistorico.Controls.Add(_consultarDetalhesHistorico);
         painelHistorico.Controls.Add(botoesHistorico, 0, 0);
         painelHistorico.Controls.Add(_gradeHistorico, 0, 1);
         painelHistorico.Controls.Add(_infoHistorico, 0, 2);
@@ -365,6 +372,8 @@ public partial class Form1 : Form
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _atualizarHistorico.Click += async (_, _) => await AtualizarHistoricoAsync();
+        _consultarDetalhesHistorico.Click += (_, _) => AbrirDetalhesHistorico();
+        _gradeHistorico.CellDoubleClick += (_, _) => AbrirDetalhesHistorico();
         _selecionar.Click += (_, _) => SelecionarPasta();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
@@ -448,6 +457,22 @@ public partial class Form1 : Form
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
         _salvarHistorico.Enabled = pronto;
         _atualizarHistorico.Enabled = pronto;
+        _consultarDetalhesHistorico.Enabled = pronto;
+    }
+
+    private void AbrirDetalhesHistorico()
+    {
+        var indice = _gradeHistorico.CurrentRow?.Index ?? -1;
+        if (indice < 0 || indice >= _execucoesHistoricas.Count)
+        {
+            MessageBox.Show(this, "Selecione uma execução do histórico.",
+                "CLEAR — Histórico SQLite", MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+        using var janela = new FormDetalhesHistoricoM6(
+            _execucoesHistoricas[indice], SessaoHistoricoSqliteM6.CaminhoPadrao);
+        janela.ShowDialog(this);
     }
 
     private async Task AtualizarHistoricoAsync()
@@ -457,6 +482,7 @@ public partial class Form1 : Form
         {
             var registros = await SessaoHistoricoSqliteM6.ConsultarUltimasAsync(
                 SessaoHistoricoSqliteM6.CaminhoPadrao);
+            _execucoesHistoricas = registros;
             _gradeHistorico.DataSource = registros.Select(x => new
             {
                 x.InicioUtc, x.FimUtc, x.Estado, x.DiretorioRaiz,
@@ -465,7 +491,7 @@ public partial class Form1 : Form
                 x.Id
             }).ToList();
             _infoHistorico.Text =
-                $"{registros.Count} execução(ões) exibida(s), até 30. Banco: " +
+                $"{registros.Count} execução(ões). Selecione uma e clique Consultar detalhes. Banco: " +
                 SessaoHistoricoSqliteM6.CaminhoPadrao +
                 " | Consulta somente leitura; classificações antigas não são reutilizadas.";
         }

@@ -10,9 +10,11 @@ git switch --track origin/feature/historico-sqlite-m6
 dotnet restore CLEAR.slnx
 dotnet build CLEAR.slnx -c Release --no-restore
 dotnet test CLEAR.slnx -c Release --no-build --no-restore
+dotnet list CLEAR.slnx package --vulnerable --include-transitive
+dotnet list CLEAR.slnx package --include-transitive
 ```
 
-Pare antes do switch se `git status --short` indicar alterações. Se a branch já existir, usar `git switch feature/historico-sqlite-m6` e `git pull --ff-only`. Esperados **167 métodos de teste** (156 anteriores + 11 novos), sujeitos à contagem real do MSTest. Esta versão não foi compilada pelo assistente.
+Pare antes do switch se `git status --short` indicar alterações. Se a branch já existir, usar `git switch feature/historico-sqlite-m6` e `git pull --ff-only`. Esperados **172 testes** (167 anteriores, já aprovados no Windows, + 5 novos de consulta). A revisão do SQLite não foi executada no ambiente do assistente.
 
 ## 2. Preparar acervo e saída de testes
 
@@ -45,7 +47,7 @@ dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 2. Marque **Detectar duplicatas exatas** e **Salvar histórico local SQLite (M6)**. Marque também **Exportar relatório completo (CSV + JSON)** para verificar compatibilidade M5+M6, em `Todas as entradas`.
 3. Execute e salve o CSV/JSON em `Relatorios` quando solicitado.
 4. A aba **Histórico SQLite — M6** deverá mostrar uma execução nova com **8 arquivos, 2 diretórios, 25 bytes, 10 entradas persistidas, 3 grupos de duplicatas e 0 ocorrências**.
-5. Feche e reabra o CLEAR, acione **Atualizar histórico**; a execução anterior deverá continuar visível.
+5. Feche e reabra o CLEAR, clique **Atualizar histórico** e selecione a execução anterior. Clique **Consultar detalhes da execução** (ou dê duplo clique). Confira: 10 entradas históricas na primeira aba e suas evidências ao selecionar cada uma; 6 membros de 3 grupos de duplicatas na segunda; 0 ocorrências na terceira. O banco deve ser consultado sem editor externo.
 6. Faça outra análise desmarcando **Detectar duplicatas exatas**, mas mantendo SQLite ativo. Histórico deverá apresentar uma segunda execução com 0 grupos, sem apagar a primeira.
 
 O aplicativo utiliza `%LOCALAPPDATA%\CLEAR\historico.sqlite3`. O banco é propositalmente **separado** de `C:\Temp\CLEAR_M6_Manual_...\Acervo`. Na pasta de saída deve haver CSV(s) e resumo JSON se M5 estiver marcado.
@@ -60,7 +62,11 @@ Get-Item $banco | Select-Object FullName, Length, LastWriteTime
 
 Deverá existir um SQLite válido. **Não mova nem exclua o banco durante os testes; ele contém histórico.** Não precisa instalar programas adicionais para consultar: a aba do CLEAR apresenta as últimas execuções.
 
-## 5. Segurança
+## 5. Verificação de segurança da dependência
+
+A saída anterior do NuGet mostrou `NU1903` em `SQLitePCLRaw.lib.e_sqlite3 2.1.11`. A branch agora solicita `Microsoft.Data.Sqlite 10.0.13` e `SQLitePCLRaw.bundle_e_sqlite3 3.0.5`. **Não presumir que isso corrigiu o problema**: conferir o resultado de `dotnet restore`, `dotnet list ... --vulnerable --include-transitive`, build e 172 testes. Caso haja `NU1605`, `NU1903` ou erros de compatibilidade, não fazer merge; enviar o log.
+
+## 6. Segurança
 
 Não use dados reais de faculdade, trabalho ou clientes; histórico guarda nomes e caminhos potencialmente sensíveis. A implementação desta parte não reutiliza hashes nem classificações e não altera arquivos do acervo. Cancelamento durante o inventário antes do commit deve deixar somente as execuções concluídas anteriormente.
 

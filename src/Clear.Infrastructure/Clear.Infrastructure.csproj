@@ -2,7 +2,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Clear.Application\Clear.Application.csproj" />
     <ProjectReference Include="..\Clear.Domain\Clear.Domain.csproj" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- O Microsoft.Data.Sqlite 10.x ainda resolve SQLitePCLRaw 2.1.11
+         sem override; o bundle 3.0.5 substitui a dependência nativa
+         vulnerável. Validar no NuGet Audit e nos testes Windows. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
