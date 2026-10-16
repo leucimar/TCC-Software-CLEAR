@@ -462,8 +462,11 @@ public partial class Form1 : Form
 
     private void AbrirDetalhesHistorico()
     {
-        var indice = _gradeHistorico.CurrentRow?.Index ?? -1;
-        if (indice < 0 || indice >= _execucoesHistoricas.Count)
+        // Identifica pelo ID, não pelo índice visual: o usuário pode ordenar
+        // a grade por qualquer coluna sem consultar a execução errada.
+        var id = Convert.ToString(_gradeHistorico.CurrentRow?.Cells["Id"].Value);
+        var execucao = _execucoesHistoricas.FirstOrDefault(x => x.Id == id);
+        if (execucao is null)
         {
             MessageBox.Show(this, "Selecione uma execução do histórico.",
                 "CLEAR — Histórico SQLite", MessageBoxButtons.OK,
@@ -471,7 +474,7 @@ public partial class Form1 : Form
             return;
         }
         using var janela = new FormDetalhesHistoricoM6(
-            _execucoesHistoricas[indice], SessaoHistoricoSqliteM6.CaminhoPadrao);
+            execucao, SessaoHistoricoSqliteM6.CaminhoPadrao);
         janela.ShowDialog(this);
     }
 
