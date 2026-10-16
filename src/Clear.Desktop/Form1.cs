@@ -6,6 +6,7 @@ using Clear.Domain.Compatibilidade;
 using Clear.Domain.Inventario;
 using Clear.Infrastructure.Inventario;
 using Clear.Infrastructure.Duplicatas;
+using Clear.Infrastructure.Relatorios;
 
 namespace Clear.Desktop;
 
@@ -38,6 +39,15 @@ public partial class Form1 : Form
     {
         Text = "Detectar duplicatas exatas (SHA-256; leitura do conteúdo)",
         AutoSize = true, Checked = false
+    };
+    private readonly CheckBox _exportarRelatorio = new()
+    {
+        Text = "Exportar relatório completo (CSV + JSON — M5)",
+        AutoSize = true, Checked = false
+    };
+    private readonly ComboBox _filtroRelatorio = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, Enabled = false
     };
     private readonly DataGridView _gradeDuplicatas = new()
     {
@@ -101,7 +111,7 @@ public partial class Form1 : Form
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Pré-análise de arquivos e duplicatas exatas (M4)";
+        Text = "CLEAR — Inventário, duplicatas e relatórios (M5)";
         MinimumSize = new Size(1190, 760);
         Size = new Size(1500, 930);
 
@@ -199,6 +209,33 @@ public partial class Form1 : Form
         linhaTamanho.Controls.Add(_unidade);
         filtrosGerais.Controls.Add(linhaTamanho);
         filtrosGerais.Controls.Add(_ativarDuplicatas);
+
+        var linhaRelatorio = new FlowLayoutPanel
+        {
+            AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false
+        };
+        linhaRelatorio.Controls.Add(_exportarRelatorio);
+        filtrosGerais.Controls.Add(linhaRelatorio);
+
+        var linhaFiltroRelatorio = new FlowLayoutPanel
+        {
+            AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false
+        };
+        linhaFiltroRelatorio.Controls.Add(new Label
+        {
+            Text = "Linhas CSV:", AutoSize = true, Padding = new Padding(0, 5, 0, 0)
+        });
+        _filtroRelatorio.Items.AddRange(new object[]
+        {
+            "Todas as entradas",
+            "Somente indícios gerais",
+            "Somente incompatibilidades",
+            "Somente tamanho pessoal",
+            "Somente achados (qualquer tipo)"
+        });
+        _filtroRelatorio.SelectedIndex = 0;
+        linhaFiltroRelatorio.Controls.Add(_filtroRelatorio);
+        filtrosGerais.Controls.Add(linhaFiltroRelatorio);
         grupoGeral.Controls.Add(filtrosGerais);
 
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
@@ -284,6 +321,7 @@ public partial class Form1 : Form
         };
         _ativarSinalTemporal.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
+        _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _selecionar.Click += (_, _) => SelecionarPasta();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
@@ -363,7 +401,12 @@ public partial class Form1 : Form
         _limite.Enabled = pronto && _ativarTamanho.Checked;
         _unidade.Enabled = pronto && _ativarTamanho.Checked;
         _ativarDuplicatas.Enabled = pronto;
+        _exportarRelatorio.Enabled = pronto;
+        _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
     }
+
+    private static string PastaInicialDeSelecao =>
+        Directory.Exists(@"C:\Temp") ? @"C:\Temp" : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     private void SelecionarPasta()
     {
@@ -371,7 +414,8 @@ public partial class Form1 : Form
         {
             Description = "Selecione uma pasta de testes sintéticos para análise somente leitura.",
             UseDescriptionForTitle = true,
-            ShowNewFolderButton = false
+            ShowNewFolderButton = false,
+            SelectedPath = Directory.Exists(_caminho.Text) ? _caminho.Text : PastaInicialDeSelecao
         };
         if (dialogo.ShowDialog(this) == DialogResult.OK)
             _caminho.Text = dialogo.SelectedPath;
@@ -427,7 +471,10 @@ public partial class Form1 : Form
         var identificarVazios = _identificarVazios.Checked;
         var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
+        var exportarRelatorio = _exportarRelatorio.Checked;
         var diasSelecionados = (int)_dias.Value;
+        var referenciaTemporalUtc = DateTimeOffset.UtcNow;
+        ExportadorRelatoriosM5? exportador = null;
 
         try
         {
@@ -437,9 +484,27 @@ public partial class Form1 : Form
                 identificarVazios,
                 identificarTemporarios,
                 usarSinalTemporal ? diasSelecionados : null,
-                DateTimeOffset.UtcNow);
+                referenciaTemporalUtc);
+            if (exportarRelatorio)
+            {
+                using var pastaSaida = new FolderBrowserDialog
+                {
+                    Description = "Escolha uma pasta de saída FORA do acervo analisado. " +
+                                  "Os relatórios incluem caminhos e possíveis dados sensíveis.",
+                    UseDescriptionForTitle = true,
+                    ShowNewFolderButton = true,
+                    SelectedPath = PastaInicialDeSelecao
+                };
+                if (pastaSaida.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                exportador = ExportadorRelatoriosM5.Iniciar(pasta,
+                    pastaSaida.SelectedPath,
+                    (FiltroLinhasRelatorio)_filtroRelatorio.SelectedIndex);
+            }
         }
-        catch (Exception ex) when (ex is ArgumentException or OverflowException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or OverflowException or InvalidOperationException
+                or IOException or UnauthorizedAccessException)
         {
             MessageBox.Show(this, ex.Message, "Parâmetros inválidos",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -476,7 +541,8 @@ public partial class Form1 : Form
                 new FonteInventarioSistemaArquivos(), limiteAmostra: 1000,
                 classificador: classificador,
                 configuracaoCompatibilidade: configuracao,
-                filtroPersonalizado: filtro);
+                filtroPersonalizado: filtro,
+                observador: exportador);
             var resultado = await Task.Run(
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
 
@@ -535,6 +601,7 @@ public partial class Form1 : Form
                 "Nenhum arquivo alterado.";
             _dicas.SetToolTip(_estado, _estado.Text);
 
+            ResultadoDuplicatas? resultadoDuplicatas = null;
             if (usarDuplicatas)
             {
                 // A detecção usa outra varredura para não reter todos os caminhos
@@ -546,8 +613,9 @@ public partial class Form1 : Form
                 var detectar = new DetectarDuplicatasExatas(
                     new FonteInventarioSistemaArquivos(),
                     new LeitorConteudoDuplicatasSistemaArquivos());
-                var duplicatas = await Task.Run(
+                resultadoDuplicatas = await Task.Run(
                     () => detectar.ExecutarAsync(pasta, progressoDuplicatas, token), token);
+                var duplicatas = resultadoDuplicatas;
 
                 // Apenas as primeiras 200 linhas são renderizadas. Os totais
                 // incluem todos os grupos e arquivos validados.
@@ -581,6 +649,32 @@ public partial class Form1 : Form
                       "Os grupos listados passaram por comparação byte a byte."
                     : "M4 concluído: SHA-256 e confirmação byte a byte. Nenhum arquivo alterado.";
             }
+
+            if (exportador is not null)
+            {
+                _estado.Text = "Finalizando relatório CSV e resumo JSON...";
+                var filtrosGerais = new List<string>();
+                if (identificarVazios) filtrosGerais.Add("ArquivoVazio");
+                if (identificarTemporarios) filtrosGerais.Add("CopiaBackupOuTemporario");
+                if (usarSinalTemporal) filtrosGerais.Add("SinalTemporal");
+                if (filtro is not null) filtrosGerais.Add("TamanhoPersonalizado");
+                if (usarDuplicatas) filtrosGerais.Add("DuplicatasSHA256");
+
+                var arquivos = await exportador.ConcluirAsync(resultado, resultadoDuplicatas,
+                    filtrosGerais, usarSinalTemporal ? diasSelecionados : null,
+                    usarSinalTemporal ? referenciaTemporalUtc : null, token);
+
+                _estado.Text = $"M5 concluído: {arquivos.LinhasExportadas:N0} linha(s) CSV " +
+                    "(amostra visual não limita o relatório). Arquivos originais inalterados.";
+                MessageBox.Show(this,
+                    "Relatório completo gerado:\n\n" +
+                    "Inventário: " + arquivos.InventarioCsv + "\n" +
+                    "Resumo: " + arquivos.ResumoJson +
+                    (arquivos.DuplicatasCsv is null ? "" :
+                        "\nDuplicatas: " + arquivos.DuplicatasCsv) +
+                    "\n\nOs caminhos exportados podem ser sensíveis. Guarde os relatórios com cuidado.",
+                    "CLEAR — Relatórios M5", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -598,6 +692,8 @@ public partial class Form1 : Form
         {
             _cancelamento.Dispose();
             _cancelamento = null;
+            if (exportador is not null)
+                await exportador.DisposeAsync();
             _selecionar.Enabled = true;
             _iniciar.Enabled = true;
             _cancelar.Enabled = false;

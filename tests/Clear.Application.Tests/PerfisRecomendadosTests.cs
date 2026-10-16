@@ -38,6 +38,6 @@ public sealed class PerfisRecomendadosTests
         var primeira = PerfisRecomendados.Para(AmbienteDestino.AzureFilesClassicoSmb);
         var segunda = PerfisRecomendados.Para(AmbienteDestino.AzureFilesClassicoSmb);
         Assert.AreEqual(primeira[0], segunda[0]);
-        Assert.AreEqual(7, CatalogoVerificacoes.Definicoes.Count);
+        Assert.HasCount(7, CatalogoVerificacoes.Definicoes);
     }
 }
