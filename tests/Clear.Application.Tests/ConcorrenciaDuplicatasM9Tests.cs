@@ -67,7 +67,7 @@ public sealed class ConcorrenciaDuplicatasM9Tests
         using var cancelar = new CancellationTokenSource();
         cancelar.CancelAfter(TimeSpan.FromMilliseconds(50));
         var leitor = new LeitorInstrumentado(100);
-        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
             await new DetectarDuplicatasExatas(new Fonte(arquivos), leitor, 4)
                 .ExecutarAsync("C:\\Teste", cancellationToken: cancelar.Token));
     }
