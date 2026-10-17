@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Clear.Application.Inventario;
 using Clear.Application.Compatibilidade;
 using Clear.Application.Duplicatas;
@@ -40,6 +41,15 @@ public partial class Form1 : Form
     {
         Text = "Detectar duplicatas exatas (SHA-256; leitura do conteúdo)",
         AutoSize = true, Checked = false
+    };
+    private readonly NumericUpDown _maximoHashes = new()
+        { Minimum = 1, Maximum = 8, Value = 1, Width = 55, Enabled = false };
+    private readonly TextBox _metricasM9 = new()
+    {
+        Dock = DockStyle.Fill, ReadOnly = true, Multiline = true,
+        ScrollBars = ScrollBars.Vertical,
+        Text = "M9: execute uma análise para ver durações e taxas observadas. " +
+               "Os resultados dependem do hardware e dos dados usados."
     };
     private readonly CheckBox _exportarRelatorio = new()
     {
@@ -239,6 +249,13 @@ public partial class Form1 : Form
         linhaTamanho.Controls.Add(_unidade);
         filtrosGerais.Controls.Add(linhaTamanho);
         filtrosGerais.Controls.Add(_ativarDuplicatas);
+        var linhaConcorrencia = new FlowLayoutPanel
+            { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
+        linhaConcorrencia.Controls.Add(new Label
+            { Text = "Leituras SHA-256 simultâneas (M9):", AutoSize = true,
+              Padding = new Padding(0, 5, 0, 0) });
+        linhaConcorrencia.Controls.Add(_maximoHashes);
+        filtrosGerais.Controls.Add(linhaConcorrencia);
 
         var linhaRelatorio = new FlowLayoutPanel
         {
@@ -350,6 +367,9 @@ public partial class Form1 : Form
         painelHistorico.Controls.Add(_infoHistorico, 0, 2);
         abaHistorico.Controls.Add(painelHistorico);
         abas.TabPages.Add(abaHistorico);
+        var abaMetricas = new TabPage("Métricas — M9");
+        abaMetricas.Controls.Add(_metricasM9);
+        abas.TabPages.Add(abaMetricas);
 
         principal.Controls.Add(abas, 0, 4);
         principal.Controls.Add(areaOcorrencias, 0, 5);
@@ -371,6 +391,7 @@ public partial class Form1 : Form
         _ativarSinalTemporal.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
+        _ativarDuplicatas.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _atualizarHistorico.Click += async (_, _) => await AtualizarHistoricoAsync();
         _consultarDetalhesHistorico.Click += (_, _) => AbrirDetalhesHistorico();
         _gradeHistorico.CellDoubleClick += (_, _) => AbrirDetalhesHistorico();
@@ -453,6 +474,7 @@ public partial class Form1 : Form
         _limite.Enabled = pronto && _ativarTamanho.Checked;
         _unidade.Enabled = pronto && _ativarTamanho.Checked;
         _ativarDuplicatas.Enabled = pronto;
+        _maximoHashes.Enabled = pronto && _ativarDuplicatas.Checked;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
         _salvarHistorico.Enabled = pronto;
@@ -574,6 +596,7 @@ public partial class Form1 : Form
         var identificarVazios = _identificarVazios.Checked;
         var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
+        var maximoHashesSimultaneos = (int)_maximoHashes.Value;
         var exportarRelatorio = _exportarRelatorio.Checked;
         var salvarHistorico = _salvarHistorico.Checked;
         var diasSelecionados = (int)_dias.Value;
@@ -635,6 +658,10 @@ public partial class Form1 : Form
             ? "Aguardando o inventário para iniciar a busca de duplicatas..."
             : "Busca de duplicatas desativada. Marque o filtro geral para habilitar.";
         _ocorrencias.Items.Clear();
+        _metricasM9.Text = "Análise em andamento. Tempos serão publicados apenas após conclusão.";
+        var cronometroTotal = Stopwatch.StartNew();
+        TimeSpan duracaoInventario = TimeSpan.Zero;
+        TimeSpan duracaoDuplicatas = TimeSpan.Zero;
         _resumo.Text = "Inventariando metadados e aplicando verificações habilitadas...";
 
         var progresso = new Progress<ProgressoInventario>(p =>
@@ -674,8 +701,10 @@ public partial class Form1 : Form
                 configuracaoCompatibilidade: configuracao,
                 filtroPersonalizado: filtro,
                 observador: observador);
+            var relogioInventario = Stopwatch.StartNew();
             var resultado = await Task.Run(
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
+            duracaoInventario = relogioInventario.Elapsed;
 
             _grade.DataSource = resultado.AmostraAvaliacoes.Select(item =>
             {
@@ -743,9 +772,12 @@ public partial class Form1 : Form
                         $"Hash calculado: {p.CandidatosComHash:N0} de {p.ArquivosCandidatos:N0} candidatos.");
                 var detectar = new DetectarDuplicatasExatas(
                     new FonteInventarioSistemaArquivos(),
-                    new LeitorConteudoDuplicatasSistemaArquivos());
+                    new LeitorConteudoDuplicatasSistemaArquivos(),
+                    maximoHashesSimultaneos);
+                var relogioDuplicatas = Stopwatch.StartNew();
                 resultadoDuplicatas = await Task.Run(
                     () => detectar.ExecutarAsync(pasta, progressoDuplicatas, token), token);
+                duracaoDuplicatas = relogioDuplicatas.Elapsed;
                 var duplicatas = resultadoDuplicatas;
 
                 // Apenas as primeiras 200 linhas são renderizadas. Os totais
@@ -815,16 +847,48 @@ public partial class Form1 : Form
                     "Sem reutilização de classificações. Nenhum arquivo original alterado.";
                 await AtualizarHistoricoAsync();
             }
+
+            cronometroTotal.Stop();
+            double segundos = duracaoInventario.TotalSeconds;
+            double taxaArquivos = segundos > 0 ? resultado.QuantidadeArquivos / segundos : 0;
+            double taxaMiB = segundos > 0
+                ? resultado.TotalBytes / 1048576.0 / segundos : 0;
+            _metricasM9.Text =
+                "MEDIÇÕES OBSERVADAS (não são benchmark validado)" + Environment.NewLine +
+                "Arquivos: " + resultado.QuantidadeArquivos.ToString("N0") +
+                " | Pastas: " + resultado.QuantidadeDiretorios.ToString("N0") +
+                " | Volume associado aos arquivos inventariados: " +
+                resultado.TotalBytes.ToString("N0") + Environment.NewLine +
+                "Inventário: " + duracaoInventario.TotalMilliseconds.ToString("F1") + " ms" +
+                " | Taxa: " + taxaArquivos.ToString("F1") + " arquivos/s" +
+                " | Volume inventariado: " + taxaMiB.ToString("F2") + " MiB/s" +
+                Environment.NewLine +
+                "Duplicatas (inclui segunda enumeração e SHA-256): " +
+                duracaoDuplicatas.TotalMilliseconds.ToString("F1") + " ms" +
+                " | Leitores SHA-256 simultâneos: " +
+                (usarDuplicatas ? maximoHashesSimultaneos.ToString() : "desativado") +
+                Environment.NewLine +
+                "Total da análise (inclui relatórios/histórico quando ativos): " +
+                cronometroTotal.Elapsed.TotalMilliseconds.ToString("F1") + " ms" +
+                Environment.NewLine +
+                "Inventário parcial: " + resultado.Incompleto +
+                " | Duplicatas parciais: " + (resultadoDuplicatas?.Incompleto ?? false) +
+                Environment.NewLine +
+                "Medidas dependem de cache do SO, hardware, antivírus e outras cargas." +
+                Environment.NewLine +
+                "Apenas leitura e medição, sem alterações nos arquivos do acervo.";
         }
         catch (OperationCanceledException)
         {
             _resumo.Text = "Inventário cancelado; resultados parciais descartados.";
             _estado.Text = "Cancelado pelo usuário.";
+            _metricasM9.Text = "Análise cancelada; métricas incompletas não publicadas.";
         }
         catch (Exception ex)
         {
             _resumo.Text = "Inventário não concluído.";
             _estado.Text = "Falha: " + ex.Message;
+            _metricasM9.Text = "Análise interrompida por falha; métricas inconclusivas.";
             MessageBox.Show(this, ex.Message, "Falha no inventário",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }

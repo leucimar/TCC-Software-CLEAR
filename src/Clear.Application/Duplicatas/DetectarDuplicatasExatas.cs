@@ -47,11 +47,18 @@ public sealed class DetectarDuplicatasExatas
     private const int MaximoOcorrencias = 100;
     private readonly IFonteInventario _fonte;
     private readonly ILeitorConteudoDuplicatas _leitor;
+    /// <summary>Limite de leitores SHA-256 simultâneos. Padrão 1 preserva o M4.</summary>
+    public int MaximoHashesSimultaneos { get; }
 
-    public DetectarDuplicatasExatas(IFonteInventario fonte, ILeitorConteudoDuplicatas leitor)
+    public DetectarDuplicatasExatas(IFonteInventario fonte, ILeitorConteudoDuplicatas leitor,
+        int maximoHashesSimultaneos = 1)
     {
         _fonte = fonte ?? throw new ArgumentNullException(nameof(fonte));
         _leitor = leitor ?? throw new ArgumentNullException(nameof(leitor));
+        if (maximoHashesSimultaneos is < 1 or > 8)
+            throw new ArgumentOutOfRangeException(nameof(maximoHashesSimultaneos),
+                "Limite permitido: de 1 a 8 leitores SHA-256.");
+        MaximoHashesSimultaneos = maximoHashesSimultaneos;
     }
 
     public async Task<ResultadoDuplicatas> ExecutarAsync(string diretorioRaiz,
@@ -103,26 +110,49 @@ public sealed class DetectarDuplicatasExatas
             cancellationToken.ThrowIfCancellationRequested();
             var porHash = new Dictionary<string, List<ArquivoInventariado>>(StringComparer.Ordinal);
 
-            foreach (var arquivo in faixa.Value.OrderBy(x => x.CaminhoCompleto, StringComparer.OrdinalIgnoreCase))
+            // Lotes curtos limitam a quantidade de operações de leitura em voo
+            // e não exigem criar uma Task para todos os arquivos do acervo.
+            // Resultados são consolidados na ordem original para manter
+            // grupos/ocorrências determinísticos entre concorrências distintas.
+            var arquivosOrdenados = faixa.Value
+                .OrderBy(x => x.CaminhoCompleto, StringComparer.OrdinalIgnoreCase);
+            foreach (var lote in arquivosOrdenados.Chunk(MaximoHashesSimultaneos))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                try
+                var tarefas = lote.Select(async arquivo =>
                 {
-                    var sha = await _leitor.CalcularSha256Async(arquivo, cancellationToken)
-                        .ConfigureAwait(false);
-                    arquivosComHash = checked(arquivosComHash + 1);
-                    if (!porHash.TryGetValue(sha, out var lista))
+                    try
                     {
-                        lista = new List<ArquivoInventariado>();
-                        porHash.Add(sha, lista);
+                        var sha = await _leitor.CalcularSha256Async(arquivo, cancellationToken)
+                            .ConfigureAwait(false);
+                        return (Arquivo: arquivo, Hash: sha, Erro: (Exception?)null);
                     }
-                    lista.Add(arquivo);
-                }
-                catch (Exception ex) when (Recuperavel(ex))
+                    catch (Exception ex) when (Recuperavel(ex))
+                    {
+                        return (Arquivo: arquivo, Hash: (string?)null, Erro: (Exception?)ex);
+                    }
+                }).ToArray();
+                var processados = await Task.WhenAll(tarefas).ConfigureAwait(false);
+                foreach (var item in processados)
                 {
-                    Registrar(arquivo.CaminhoCompleto, "HashNaoCalculado", ex);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (item.Erro is not null)
+                    {
+                        Registrar(item.Arquivo.CaminhoCompleto, "HashNaoCalculado", item.Erro);
+                    }
+                    else
+                    {
+                        arquivosComHash = checked(arquivosComHash + 1);
+                        var sha = item.Hash!;
+                        if (!porHash.TryGetValue(sha, out var lista))
+                        {
+                            lista = new List<ArquivoInventariado>();
+                            porHash.Add(sha, lista);
+                        }
+                        lista.Add(item.Arquivo);
+                    }
+                    progresso?.Report(new ProgressoDuplicatas(arquivosComHash, totalCandidatos));
                 }
-                progresso?.Report(new ProgressoDuplicatas(arquivosComHash, totalCandidatos));
             }
 
             foreach (var hash in porHash.Where(x => x.Value.Count >= 2).OrderBy(x => x.Key))
