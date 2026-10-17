@@ -9,6 +9,7 @@ using Clear.Infrastructure.Inventario;
 using Clear.Infrastructure.Duplicatas;
 using Clear.Infrastructure.Relatorios;
 using Clear.Infrastructure.Historico;
+using Clear.Infrastructure.Execucao;
 
 namespace Clear.Desktop;
 
@@ -44,6 +45,13 @@ public partial class Form1 : Form
     };
     private readonly NumericUpDown _maximoHashes = new()
         { Minimum = 1, Maximum = 8, Value = 1, Width = 55, Enabled = false };
+    private readonly NumericUpDown _limiteIndexacao = new()
+        { Minimum = 100, Maximum = 1_000_000, Value = 250_000, Increment = 1000,
+          ThousandsSeparator = true, Width = 105, Enabled = false };
+    private readonly CheckBox _salvarCheckpoint = new()
+        { Text = "Salvar progresso para reinício seguro (M9; sem cache)", AutoSize = true };
+    private readonly Button _reiniciarInterrompida = new()
+        { Text = "Reiniciar análise interrompida (do início)", AutoSize = true };
     private readonly TextBox _metricasM9 = new()
     {
         Dock = DockStyle.Fill, ReadOnly = true, Multiline = true,
@@ -256,6 +264,13 @@ public partial class Form1 : Form
               Padding = new Padding(0, 5, 0, 0) });
         linhaConcorrencia.Controls.Add(_maximoHashes);
         filtrosGerais.Controls.Add(linhaConcorrencia);
+        var linhaMemoria = new FlowLayoutPanel
+            { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
+        linhaMemoria.Controls.Add(new Label
+            { Text = "Máximo de arquivos indexados em RAM (M9):", AutoSize = true,
+              Padding = new Padding(0, 5, 0, 0) });
+        linhaMemoria.Controls.Add(_limiteIndexacao);
+        filtrosGerais.Controls.Add(linhaMemoria);
 
         var linhaRelatorio = new FlowLayoutPanel
         {
@@ -284,6 +299,8 @@ public partial class Form1 : Form
         linhaFiltroRelatorio.Controls.Add(_filtroRelatorio);
         filtrosGerais.Controls.Add(linhaFiltroRelatorio);
         filtrosGerais.Controls.Add(_salvarHistorico);
+        filtrosGerais.Controls.Add(_salvarCheckpoint);
+        filtrosGerais.Controls.Add(_reiniciarInterrompida);
         grupoGeral.Controls.Add(filtrosGerais);
 
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
@@ -398,6 +415,7 @@ public partial class Form1 : Form
         _selecionar.Click += (_, _) => SelecionarPasta();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
+        _reiniciarInterrompida.Click += async (_, _) => await ReiniciarInterrompidaAsync();
         FormClosing += (_, args) =>
         {
             if (_cancelamento is not null)
@@ -475,6 +493,9 @@ public partial class Form1 : Form
         _unidade.Enabled = pronto && _ativarTamanho.Checked;
         _ativarDuplicatas.Enabled = pronto;
         _maximoHashes.Enabled = pronto && _ativarDuplicatas.Checked;
+        _limiteIndexacao.Enabled = pronto && _ativarDuplicatas.Checked;
+        _salvarCheckpoint.Enabled = pronto;
+        _reiniciarInterrompida.Enabled = pronto;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
         _salvarHistorico.Enabled = pronto;
@@ -579,6 +600,80 @@ public partial class Form1 : Form
         return new FiltroTamanhoPersonalizado(bytes);
     }
 
+    private string AssinaturaConfiguracaoM9()
+    {
+        var destino = CriarConfiguracaoDestino();
+        var filtro = CriarFiltroPersonalizado();
+        return string.Join("\n", new[]
+        {
+            "M9-parte2-v1",
+            $"Vazios={_identificarVazios.Checked}",
+            $"Temporarios={_identificarTemporarios.Checked}",
+            $"Temporal={_ativarSinalTemporal.Checked}",
+            $"Dias={(_ativarSinalTemporal.Checked ? _dias.Value : 0)}",
+            $"LimiteBytes={filtro?.LimiteBytes.ToString() ?? "desativado"}",
+            $"Duplicatas={_ativarDuplicatas.Checked}",
+            $"Hashes={(_ativarDuplicatas.Checked ? _maximoHashes.Value : 0)}",
+            $"Indexacao={(_ativarDuplicatas.Checked ? _limiteIndexacao.Value : 0)}",
+            $"Relatorio={_exportarRelatorio.Checked}",
+            $"FiltroRelatorio={(_exportarRelatorio.Checked ? _filtroRelatorio.SelectedIndex : -1)}",
+            $"Historico={_salvarHistorico.Checked}",
+            $"Perfil={destino.Perfil?.Ambiente}",
+            $"Subtipo={destino.Perfil?.Subtipo}",
+            $"Regras={string.Join(",", destino.CodigosHabilitados.OrderBy(x => x, StringComparer.Ordinal))}"
+        });
+    }
+
+    private async Task ReiniciarInterrompidaAsync()
+    {
+        if (_cancelamento is not null) return;
+        try
+        {
+            var caminho = _caminho.Text.Trim();
+            if (!Directory.Exists(caminho))
+                throw new DirectoryNotFoundException("Selecione a pasta original da análise.");
+            var anterior = CheckpointAnaliseM9.Consultar(caminho)
+                ?? throw new InvalidOperationException("Não existe checkpoint para esta pasta.");
+            if (anterior.AssinaturaConfiguracao !=
+                CheckpointAnaliseM9.Assinatura(AssinaturaConfiguracaoM9()))
+                throw new InvalidOperationException(
+                    "A configuração atual difere da análise interrompida. " +
+                    "Selecione as opções originais ou inicie uma NOVA análise normalmente.");
+            if (!anterior.PodeReiniciar)
+                throw new InvalidOperationException("Esta análise não está interrompida.");
+            var escolha = MessageBox.Show(this,
+                "Reiniciar a análise interrompida DO INÍCIO?" + Environment.NewLine +
+                "Estado anterior: " + anterior.Estado + Environment.NewLine +
+                $"Último progresso persistido: {anterior.ArquivosLidos:N0} arquivos." +
+                Environment.NewLine + Environment.NewLine +
+                "Nenhuma classificação, hash ou resultado parcial será reutilizado. " +
+                "O CLEAR fará NOVA leitura do diretório e aplicará as regras atuais.",
+                "CLEAR — Reinício seguro M9", MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (escolha != DialogResult.Yes) return;
+            _salvarCheckpoint.Checked = true;
+            await IniciarAnaliseAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Reinício seguro M9",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private sealed class ProgressoComCheckpoint(
+        IProgress<ProgressoInventario> exibicao, CheckpointAnaliseM9? checkpoint)
+        : IProgress<ProgressoInventario>
+    {
+        public void Report(ProgressoInventario valor)
+        {
+            // A gravação executa na thread de inventário: se falhar,
+            // interrompe toda a análise (nunca publica resultado falso).
+            checkpoint?.Atualizar(valor.QuantidadeArquivos, valor.TotalBytes);
+            exibicao.Report(valor);
+        }
+    }
+
     private async Task IniciarAnaliseAsync()
     {
         var pasta = _caminho.Text.Trim();
@@ -597,12 +692,15 @@ public partial class Form1 : Form
         var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
         var maximoHashesSimultaneos = (int)_maximoHashes.Value;
+        var maximoArquivosIndexados = (int)_limiteIndexacao.Value;
+        var salvarCheckpoint = _salvarCheckpoint.Checked;
         var exportarRelatorio = _exportarRelatorio.Checked;
         var salvarHistorico = _salvarHistorico.Checked;
         var diasSelecionados = (int)_dias.Value;
         var referenciaTemporalUtc = DateTimeOffset.UtcNow;
         ExportadorRelatoriosM5? exportador = null;
         SessaoHistoricoSqliteM6? historico = null;
+        CheckpointAnaliseM9? checkpoint = null;
 
         try
         {
@@ -664,8 +762,37 @@ public partial class Form1 : Form
         TimeSpan duracaoDuplicatas = TimeSpan.Zero;
         _resumo.Text = "Inventariando metadados e aplicando verificações habilitadas...";
 
-        var progresso = new Progress<ProgressoInventario>(p =>
+        var progressoUi = new Progress<ProgressoInventario>(p =>
             _estado.Text = $"Lidos: {p.QuantidadeArquivos:N0} arquivo(s), {p.TotalBytes:N0} bytes.");
+        if (salvarCheckpoint)
+        {
+            try
+            {
+                checkpoint = CheckpointAnaliseM9.Iniciar(pasta, AssinaturaConfiguracaoM9());
+            }
+            catch (Exception ex)
+            {
+                _estado.Text = "Checkpoint M9 indisponível: " + ex.Message;
+                _metricasM9.Text = "Análise não iniciada; marcador de progresso falhou.";
+                // Sem prosseguir silenciosamente sem a opção solicitada.
+                _cancelamento.Dispose();
+                _cancelamento = null;
+                _selecionar.Enabled = true;
+                _iniciar.Enabled = true;
+                _cancelar.Enabled = false;
+                _semDestino.Enabled = true;
+                _azure.Enabled = true;
+                _sharePoint.Enabled = true;
+                _ativarSinalTemporal.Enabled = true;
+                _ativarTamanho.Enabled = true;
+                _identificarVazios.Enabled = true;
+                _identificarTemporarios.Enabled = true;
+                AtualizarHabilitacao();
+                if (exportador is not null) await exportador.DisposeAsync();
+                return;
+            }
+        }
+        var progresso = new ProgressoComCheckpoint(progressoUi, checkpoint);
 
         try
         {
@@ -773,7 +900,7 @@ public partial class Form1 : Form
                 var detectar = new DetectarDuplicatasExatas(
                     new FonteInventarioSistemaArquivos(),
                     new LeitorConteudoDuplicatasSistemaArquivos(),
-                    maximoHashesSimultaneos);
+                    maximoHashesSimultaneos, maximoArquivosIndexados);
                 var relogioDuplicatas = Stopwatch.StartNew();
                 resultadoDuplicatas = await Task.Run(
                     () => detectar.ExecutarAsync(pasta, progressoDuplicatas, token), token);
@@ -848,6 +975,7 @@ public partial class Form1 : Form
                 await AtualizarHistoricoAsync();
             }
 
+            checkpoint?.MarcarConcluida();
             cronometroTotal.Stop();
             double segundos = duracaoInventario.TotalSeconds;
             double taxaArquivos = segundos > 0 ? resultado.QuantidadeArquivos / segundos : 0;
@@ -880,12 +1008,16 @@ public partial class Form1 : Form
         }
         catch (OperationCanceledException)
         {
+            try { checkpoint?.MarcarCancelada(); }
+            catch (Exception ex) { _estado.Text = "Falha ao registrar cancelamento: " + ex.Message; }
             _resumo.Text = "Inventário cancelado; resultados parciais descartados.";
             _estado.Text = "Cancelado pelo usuário.";
             _metricasM9.Text = "Análise cancelada; métricas incompletas não publicadas.";
         }
         catch (Exception ex)
         {
+            try { checkpoint?.MarcarFalha(); }
+            catch (Exception erro) { _metricasM9.Text = "Falha ao salvar checkpoint: " + erro.Message; }
             _resumo.Text = "Inventário não concluído.";
             _estado.Text = "Falha: " + ex.Message;
             _metricasM9.Text = "Análise interrompida por falha; métricas inconclusivas.";
@@ -894,6 +1026,11 @@ public partial class Form1 : Form
         }
         finally
         {
+            try { checkpoint?.Dispose(); }
+            catch (Exception ex)
+            {
+                _estado.Text = "Atenção: falha ao fechar checkpoint: " + ex.Message;
+            }
             _cancelamento.Dispose();
             _cancelamento = null;
             if (exportador is not null)

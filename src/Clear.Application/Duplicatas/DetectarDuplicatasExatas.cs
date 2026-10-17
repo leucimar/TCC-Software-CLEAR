@@ -49,9 +49,14 @@ public sealed class DetectarDuplicatasExatas
     private readonly ILeitorConteudoDuplicatas _leitor;
     /// <summary>Limite de leitores SHA-256 simultâneos. Padrão 1 preserva o M4.</summary>
     public int MaximoHashesSimultaneos { get; }
+    /// <summary>
+    /// Limite defensivo de arquivos indexados em RAM antes da fase de SHA-256.
+    /// Se excedido, falha claramente sem produzir resultado incompleto como completo.
+    /// </summary>
+    public int MaximoArquivosIndexados { get; }
 
     public DetectarDuplicatasExatas(IFonteInventario fonte, ILeitorConteudoDuplicatas leitor,
-        int maximoHashesSimultaneos = 1)
+        int maximoHashesSimultaneos = 1, int maximoArquivosIndexados = 250_000)
     {
         _fonte = fonte ?? throw new ArgumentNullException(nameof(fonte));
         _leitor = leitor ?? throw new ArgumentNullException(nameof(leitor));
@@ -59,6 +64,10 @@ public sealed class DetectarDuplicatasExatas
             throw new ArgumentOutOfRangeException(nameof(maximoHashesSimultaneos),
                 "Limite permitido: de 1 a 8 leitores SHA-256.");
         MaximoHashesSimultaneos = maximoHashesSimultaneos;
+        if (maximoArquivosIndexados is < 1 or > 1_000_000)
+            throw new ArgumentOutOfRangeException(nameof(maximoArquivosIndexados),
+                "O limite deve ficar entre 1 e 1.000.000 arquivos.");
+        MaximoArquivosIndexados = maximoArquivosIndexados;
     }
 
     public async Task<ResultadoDuplicatas> ExecutarAsync(string diretorioRaiz,
@@ -78,6 +87,12 @@ public sealed class DetectarDuplicatasExatas
             cancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(arquivo);
             arquivosInventariados = checked(arquivosInventariados + 1);
+            if (arquivosInventariados > MaximoArquivosIndexados)
+                throw new InvalidOperationException(
+                    $"M4 interrompido: limite de {MaximoArquivosIndexados:N0} arquivos " +
+                    "indexados em memória foi ultrapassado. Não há resultado " +
+                    "conclusivo de deduplicação. Reduza o acervo ou aumente o limite " +
+                    "após avaliação dos recursos do computador.");
             if (!porTamanho.TryGetValue(arquivo.TamanhoBytes, out var lista))
             {
                 lista = new List<ArquivoInventariado>();
