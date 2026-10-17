@@ -14,7 +14,8 @@ Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assisti
 - M5 Parte 1: exportação CSV completa (com filtros de achados), resumo JSON e CSV de membros de grupos M4;
 - **M6 (integrado à develop):** histórico SQLite opcional e transacional, armazenando entradas, evidências, parâmetros, ocorrências e grupos confirmados, com consulta detalhada paginada na interface;
 - **M7 (integrado à develop):** quarentena individual mediante confirmação humana, validação SHA-256 e auditoria SQLite;
-- **M8 Parte 1 (feature em validação):** restauração individual de um arquivo já auditado como EmQuarentena, com nova confirmação humana, verificação SHA-256, proteção contra sobrescrita e estados auditáveis RestauracaoPendente / Restaurado.
+- **M8 (integrado à develop):** restauração individual de um arquivo auditado como EmQuarentena, com confirmação humana adicional, SHA-256, proteção contra sobrescrita e estados RestauracaoPendente / Restaurado;
+- **M9 Parte 1 (feature em validação):** concorrência limitada (1–8) no SHA-256 de M4, métricas observacionais e benchmark sintético com dados brutos JSON. O cache e a retomada exigem estudos adicionais.
 
 ## Histórico SQLite (M6)
 
@@ -33,7 +34,7 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Roteiros: `docs/tests/Roteiro_Validacao_M6_Parte1.md`, `docs/tests/Roteiro_Validacao_M7_Parte1.md` e `docs/tests/Roteiro_Validacao_M8_Parte1.md`.
+Roteiros: `docs/tests/Roteiro_Validacao_M6_Parte1.md`, `docs/tests/Roteiro_Validacao_M7_Parte1.md` e `docs/tests/Roteiro_Validacao_M8_Parte1.md` e `docs/tests/Roteiro_Validacao_M9_Parte1.md`.
 
 ## Quarentena M7 — somente com confirmação humana
 
@@ -49,6 +50,20 @@ Na aba Auditoria da quarentena (dentro da consulta histórica M6), selecione uma
 
 Status Pendente do M7 e RestauracaoPendente do M8 são situações incertas: não repetir a ação automaticamente. O M8 não corrige caminhos ausentes, não sobrescreve nomes existentes e não restaura em lotes. O banco SQLite da auditoria M7 permanece no esquema v1, sem migrações destrutivas.
 
+## M9 — Robustez e medições reproduzíveis
+
+Com a detecção de duplicatas ativada, configure de 1 a 8 **leituras SHA-256 simultâneas** (padrão 1); os resultados são consolidados na ordem dos caminhos. A comparação byte a byte continua sequencial, e o limite evita criar tarefas para todos os arquivos ao mesmo tempo. A nova aba **Métricas — M9** exibe tempo de inventário, deduplicação e total, arquivos/s e volume inventariado/s. Estas são medições locais e **não** conclusões científicas.
+
+Execute o benchmark sintético gratuito:
+
+```powershell
+dotnet run --project benchmarks/Clear.Benchmarks.M9/Clear.Benchmarks.M9.csproj -c Release -- --arquivos 500 --bytes 4096 --repeticoes 3
+```
+
+O programa criará em C:\Temp (ou %TEMP%) um acervo sintético com conteúdo determinístico e gravará **medicoes_m9.json** na pasta pai. A saída contém 9 amostras (3 concorrências x 3 repetições), tempos, CPU, hashes, grupos e observações de memória; ver roteiro de validação M9.
+
+Nenhuma classificação ou hash antigo é reutilizado automaticamente. A retomada segura de análise interrompida, limites de memória para acervos maiores e a validação dos ganhos permanecem para incrementos posteriores. Ações de quarentena/restauração continuam exigindo confirmação humana independente.
+
 ## Estado
 
-M0–M2 integrados à main. M3–M7 integrados à develop. M6 teve 172 testes aprovados e auditoria NuGet sem vulnerabilidades detectadas. O M7 foi validado manualmente pelo autor (a suíte completa de 182 testes ainda não foi demonstrada). M8 Parte 1 está em feature/restauracao-quarentena-m8 e **ainda não foi testada localmente**; 11 testes adicionais, 193 esperados. Main inalterada.
+M0–M2 integrados à main. M3–M8 integrados à develop. No M8, o usuário confirmou 193/193 testes e restauração sintética; o aviso MSTEST0037 foi corrigido antes do merge e a validação pós-correção fica pendente. M9 Parte 1 está na branch feature/robustez-medicoes-m9, ainda sem compilação local, com 5 novos testes previstos (198 no total). A main permanece inalterada.
