@@ -44,8 +44,9 @@ public sealed class ServicoRestauracaoM8Tests
 
         // Abre outro SQLite em modo leitura e valida o estado consolidado.
         Assert.AreEqual("Restaurado", (await c.RegistrosAsync()).Single().Estado);
-        Assert.IsTrue((await c.RegistrosAsync()).Single().Mensagem?.Contains(
-            "Restauração confirmada", StringComparison.Ordinal) == true);
+        var mensagem = (await c.RegistrosAsync()).Single().Mensagem;
+        Assert.IsNotNull(mensagem);
+        StringAssert.Contains(mensagem, "Restauração confirmada");
     }
 
     [TestMethod]
