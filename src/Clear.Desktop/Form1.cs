@@ -23,6 +23,8 @@ public partial class Form1 : Form
     private readonly Button _selecionar = new() { Text = "Escolher pasta", Dock = DockStyle.Fill };
     private readonly Button _iniciar = new() { Text = "Analisar (somente leitura)", Dock = DockStyle.Fill };
     private readonly Button _cancelar = new() { Text = "Cancelar", Dock = DockStyle.Fill, Enabled = false };
+    private readonly Button _criarSubBase = new()
+        { Text = "Criar sub-base experimental (SOMENTE CÓPIA)", AutoSize = true };
     private readonly Label _resumo = new() { Dock = DockStyle.Fill };
     private readonly Label _estado = new() { Dock = DockStyle.Fill, AutoEllipsis = true };
     private readonly ToolTip _dicas = new();
@@ -301,6 +303,7 @@ public partial class Form1 : Form
         filtrosGerais.Controls.Add(_salvarHistorico);
         filtrosGerais.Controls.Add(_salvarCheckpoint);
         filtrosGerais.Controls.Add(_reiniciarInterrompida);
+        filtrosGerais.Controls.Add(_criarSubBase);
         grupoGeral.Controls.Add(filtrosGerais);
 
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
@@ -416,6 +419,11 @@ public partial class Form1 : Form
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
         _reiniciarInterrompida.Click += async (_, _) => await ReiniciarInterrompidaAsync();
+        _criarSubBase.Click += (_, _) =>
+        {
+            using var janela = new FormSubBaseExperimental(_caminho.Text.Trim());
+            janela.ShowDialog(this);
+        };
         FormClosing += (_, args) =>
         {
             if (_cancelamento is not null)
@@ -496,6 +504,7 @@ public partial class Form1 : Form
         _limiteIndexacao.Enabled = pronto && _ativarDuplicatas.Checked;
         _salvarCheckpoint.Enabled = pronto;
         _reiniciarInterrompida.Enabled = pronto;
+        _criarSubBase.Enabled = pronto;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
         _salvarHistorico.Enabled = pronto;
