@@ -15,7 +15,8 @@ Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assisti
 - **M6 (integrado à develop):** histórico SQLite opcional e transacional, armazenando entradas, evidências, parâmetros, ocorrências e grupos confirmados, com consulta detalhada paginada na interface;
 - **M7 (integrado à develop):** quarentena individual mediante confirmação humana, validação SHA-256 e auditoria SQLite;
 - **M8 (integrado à develop):** restauração individual de um arquivo auditado como EmQuarentena, com confirmação humana adicional, SHA-256, proteção contra sobrescrita e estados RestauracaoPendente / Restaurado;
-- **M9 Parte 1 (feature em validação):** concorrência limitada (1–8) no SHA-256 de M4, métricas observacionais e benchmark sintético com dados brutos JSON. O cache e a retomada exigem estudos adicionais.
+- **M9 Parte 1 (integrada à develop):** concorrência limitada (1–8) no SHA-256 de M4, métricas observacionais e benchmark sintético com resultados JSON;
+- **M9 Parte 2 (feature em validação):** checkpoints opcionais de progresso para **reinício integral assistido**, sem reutilização de resultados, e limite defensivo configurável de arquivos indexados na deduplicação.
 
 ## Histórico SQLite (M6)
 
@@ -34,7 +35,7 @@ dotnet test CLEAR.slnx -c Release --no-build --no-restore
 dotnet run --project src/Clear.Desktop/Clear.Desktop.csproj
 ```
 
-Roteiros: `docs/tests/Roteiro_Validacao_M6_Parte1.md`, `docs/tests/Roteiro_Validacao_M7_Parte1.md` e `docs/tests/Roteiro_Validacao_M8_Parte1.md` e `docs/tests/Roteiro_Validacao_M9_Parte1.md`.
+Roteiros: `docs/tests/Roteiro_Validacao_M6_Parte1.md`, `docs/tests/Roteiro_Validacao_M7_Parte1.md` e `docs/tests/Roteiro_Validacao_M8_Parte1.md` e `docs/tests/Roteiro_Validacao_M9_Parte1.md` e `docs/tests/Roteiro_Validacao_M9_Parte2.md`.
 
 ## Quarentena M7 — somente com confirmação humana
 
@@ -62,8 +63,12 @@ dotnet run --project benchmarks/Clear.Benchmarks.M9/Clear.Benchmarks.M9.csproj -
 
 O programa criará em C:\Temp (ou %TEMP%) um acervo sintético com conteúdo determinístico e gravará **medicoes_m9.json** na pasta pai. A saída contém 9 amostras (3 concorrências x 3 repetições), tempos, CPU, hashes, grupos e observações de memória; ver roteiro de validação M9.
 
-Nenhuma classificação ou hash antigo é reutilizado automaticamente. A retomada segura de análise interrompida, limites de memória para acervos maiores e a validação dos ganhos permanecem para incrementos posteriores. Ações de quarentena/restauração continuam exigindo confirmação humana independente.
+Nenhuma classificação ou hash antigo é reutilizado automaticamente. A Parte 2 acrescenta um **checkpoint de progresso** fora da origem, em %LOCALAPPDATA%\CLEAR\Checkpoints, contendo estado, contadores e assinatura das configurações. Após uma interrupção, o usuário pode confirmar **Reiniciar análise interrompida (do início)**: os arquivos são lidos NOVAMENTE desde zero; não se trata de retomada incremental.
+
+A Parte 2 também limita a quantidade de arquivos indexados simultaneamente em RAM pelo M4 (padrão 250.000, ajustável de 100 a 1.000.000 na interface). Ultrapassar o limite interrompe a deduplicação com mensagem explícita; não gera resultado completo. Esse limite não é limite exato de bytes de memória.
+
+Uma retomada incremental real, com checkpoints de dados validados, limitação mais precisa de memória e reutilização segura de classificações/hashes continuam pendentes. Ações de quarentena/restauração continuam exigindo confirmação humana independente.
 
 ## Estado
 
-M0–M2 integrados à main. M3–M8 integrados à develop. No M8, o usuário confirmou 193/193 testes e restauração sintética; o aviso MSTEST0037 foi corrigido antes do merge e a validação pós-correção fica pendente. M9 Parte 1 está na branch feature/robustez-medicoes-m9, ainda sem compilação local, com 5 novos testes previstos (198 no total). A main permanece inalterada.
+M0–M2 integrados à main. M3–M8 e M9 Parte 1 integrados à develop. O usuário confirmou 198/198 testes, compilação sem avisos, benchmarks de 500 e 2.000 arquivos e controle de concorrência funcional na interface M9 Parte 1. M9 Parte 2 está em feature/checkpoint-reinicio-seguro-m9-parte2, sem compilação ou testes locais ainda (210 previstos); nenhum merge desta parte foi feito. A main permanece inalterada.
