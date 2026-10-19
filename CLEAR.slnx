@@ -5,6 +5,9 @@
     <Project Path="src/Clear.Domain/Clear.Domain.csproj" />
     <Project Path="src/Clear.Infrastructure/Clear.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Clear.Benchmarks.M9/Clear.Benchmarks.M9.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Clear.Application.Tests/Clear.Application.Tests.csproj" />
     <Project Path="tests/Clear.Domain.Tests/Clear.Domain.Tests.csproj" />
