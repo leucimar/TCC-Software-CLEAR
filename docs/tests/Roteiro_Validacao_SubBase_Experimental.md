@@ -1,6 +1,6 @@
 # CLEAR — Roteiro de validação da sub-base por CÓPIA
 
-Status: ainda não executado no Windows. Esperados 224 testes automatizados (210 anteriores + 14 novos).
+Status: primeira execução Windows informada pelo autor: build Release concluído com 2 avisos MSTEST0037; 222/224 testes aprovados. Dois testes de infraestrutura falharam porque tentavam obter 30% de apenas 5 arquivos e não conseguiam representar todos os estratos. Corrigidas as duas pré-condições de teste para 100%, mantendo o requisito de representatividade de 30% inalterado no código de produção; corrigidas também as duas asserções advertidas pelo analisador. **Recompilação e reexecução dos 224 testes após essa correção ainda pendentes.**
 
 ## Comandos no Developer PowerShell
 

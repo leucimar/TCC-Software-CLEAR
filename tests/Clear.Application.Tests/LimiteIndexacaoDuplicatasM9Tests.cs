@@ -30,7 +30,7 @@ public sealed class LimiteIndexacaoDuplicatasM9Tests
             maximoArquivosIndexados: 4).ExecutarAsync("C:\\Teste");
         Assert.AreEqual(4L, resultado.ArquivosInventariados);
         Assert.AreEqual(4L, resultado.ArquivosComHash);
-        Assert.AreEqual(1, resultado.Grupos.Count);
+        Assert.HasCount(1, resultado.Grupos);
         Assert.IsFalse(resultado.Incompleto);
     }
 

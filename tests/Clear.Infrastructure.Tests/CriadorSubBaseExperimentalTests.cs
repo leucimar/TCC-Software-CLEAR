@@ -62,7 +62,9 @@ public sealed class CriadorSubBaseExperimentalTests
     {
         using var cena = new Cenario();
         cena.GerarArquivos(5);
-        var plano = CriadorSubBaseExperimental.Preparar(cena.Origem, cena.Destino);
+        // Este teste verifica sobrescrita, não viabilidade de estratos.
+        // Em apenas 5 arquivos, a amostra de 30% não cobre todos os estratos.
+        var plano = CriadorSubBaseExperimental.Preparar(cena.Origem, cena.Destino, 100M);
         Directory.CreateDirectory(cena.Destino);
         var protegido = Path.Combine(cena.Destino, "protegido.txt");
         await File.WriteAllTextAsync(protegido, "NÃO MEXER");
@@ -111,7 +113,9 @@ public sealed class CriadorSubBaseExperimentalTests
     {
         using var cena = new Cenario();
         cena.GerarArquivos(5);
-        var plano = CriadorSubBaseExperimental.Preparar(cena.Origem, cena.Destino);
+        // O foco é cancelar antes de criar pastas, sem depender do
+        // percentual mínimo de representatividade deste pequeno acervo.
+        var plano = CriadorSubBaseExperimental.Preparar(cena.Origem, cena.Destino, 100M);
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
             CriadorSubBaseExperimental.ExecutarAsync(
                 cena.Origem, cena.Destino, plano,

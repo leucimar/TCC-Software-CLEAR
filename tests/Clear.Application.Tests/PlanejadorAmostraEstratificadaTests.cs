@@ -81,7 +81,7 @@ public sealed class PlanejadorAmostraEstratificadaTests
         };
         var plano = PlanejadorAmostraEstratificada.Planejar(arquivos, 30M, 5721);
         Assert.HasCount(1, plano.Selecionados);
-        Assert.IsTrue(plano.PercentualBytesReal != 30M);
+        Assert.AreNotEqual(30M, plano.PercentualBytesReal);
     }
 
     [TestMethod]
