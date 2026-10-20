@@ -313,23 +313,31 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             {
                 _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
                     e.TamanhoBytes ?? 0,
-                    (e.CategoriasJson == "[]" ? "" : e.CategoriasJson) +
-                        (e.AcimaDoLimitePessoal ? " | ACIMA LIMITE" : "") +
-                        (e.EhDuplicataExata ? " | DUPLICATA EXATA" : "") +
-                        (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
-                            StringComparison.Ordinal) ? " | INCOMPATIBILIDADE" : "") +
-                        (e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"",
-                            StringComparison.Ordinal) ? " | ALERTA COMPATIBILIDADE" : "") +
-                        (e.CategoriasJson == "[]" && !e.AcimaDoLimitePessoal &&
-                         !e.EhDuplicataExata &&
-                         !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
-                             StringComparison.Ordinal) &&
-                         !e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"",
-                             StringComparison.Ordinal) ? "SEM ALERTAS DETECTADOS (não significa aprovado)" : ""),
+                    TextoClassificacoes(e),
                     e.AcessadoUtc ?? "Indisponível", e.ModificadoUtc ?? string.Empty, e.Id);
             }
         }
         finally { _carregando = false; }
+    }
+
+    private static bool SemAlertasDetectados(EntradaHistoricaM6 e) =>
+        e.CategoriasJson == "[]" && !e.AcimaDoLimitePessoal && !e.EhDuplicataExata &&
+        !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada", StringComparison.Ordinal) &&
+        !e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"", StringComparison.Ordinal);
+
+    private static string TextoClassificacoes(EntradaHistoricaM6 e)
+    {
+        if (SemAlertasDetectados(e))
+            return "Sem alertas detectados (não significa aprovado)";
+        var marcadores = new List<string>();
+        if (e.CategoriasJson != "[]") marcadores.Add(e.CategoriasJson);
+        if (e.AcimaDoLimitePessoal) marcadores.Add("ACIMA LIMITE");
+        if (e.EhDuplicataExata) marcadores.Add("DUPLICATA EXATA");
+        if (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada", StringComparison.Ordinal))
+            marcadores.Add("INCOMPATIBILIDADE");
+        if (e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"", StringComparison.Ordinal))
+            marcadores.Add("ALERTA COMPATIBILIDADE");
+        return string.Join(" | ", marcadores);
     }
 
     private void ExibirEstado() =>
@@ -373,10 +381,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             MessageBox.Show(this, "Não foi possível preparar a prévia: " + ex.Message);
             return;
         }
-        var semAlertas = entradas.Count(e => e.CategoriasJson == "[]" &&
-            !e.AcimaDoLimitePessoal && !e.EhDuplicataExata &&
-            !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada", StringComparison.Ordinal) &&
-            !e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"", StringComparison.Ordinal));
+        var semAlertas = entradas.Count(SemAlertasDetectados);
         var caminhosDeExemplo = string.Join(Environment.NewLine,
             entradas.Take(12).Select(e => "  • " + e.Caminho));
         var avisoExcedentes = entradas.Count > 12
