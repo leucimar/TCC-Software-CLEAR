@@ -183,6 +183,12 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _proximo.Click += async (_, _) => await CarregarAsync(_pagina + 1);
         _selecionarPagina.Click += (_, _) =>
         {
+            if (_selecionados.Concat(_paginaAtual.Select(x => x.Id))
+                    .Distinct().Take(10001).Count() > 10000)
+            {
+                MessageBox.Show(this, "O lote não pode exceder 10.000 arquivos.");
+                return;
+            }
             foreach (var item in _paginaAtual) _selecionados.Add(item.Id);
             AtualizarMarcacoes();
             ExibirEstado();
@@ -367,6 +373,10 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             MessageBox.Show(this, "Não foi possível preparar a prévia: " + ex.Message);
             return;
         }
+        var semAlertas = entradas.Count(e => e.CategoriasJson == "[]" &&
+            !e.AcimaDoLimitePessoal && !e.EhDuplicataExata &&
+            !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada", StringComparison.Ordinal) &&
+            !e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"", StringComparison.Ordinal));
         var caminhosDeExemplo = string.Join(Environment.NewLine,
             entradas.Take(12).Select(e => "  • " + e.Caminho));
         var avisoExcedentes = entradas.Count > 12
@@ -375,6 +385,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         var resposta = MessageBox.Show(this,
             $"CONFIRMAR A MOVIMENTAÇÃO PARA QUARENTENA DE {quantidade:N0} ARQUIVOS?" +
             Environment.NewLine + $"Total histórico: {tamanho:N0} bytes" +
+            Environment.NewLine + $"Sem alertas detectados no lote: {semAlertas:N0} (não significa aprovado)." +
             Environment.NewLine + $"Origem da análise: {_execucao.DiretorioRaiz}" +
             Environment.NewLine + $"Raiz da quarentena: {_destino}" +
             Environment.NewLine + "APENAS IDs INDIVIDUALMENTE SELECIONADOS." +
