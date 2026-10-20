@@ -78,6 +78,43 @@ public sealed class ConsultaEntradasFiltradasM10Tests
     }
 
     [TestMethod]
+    public async Task DuplicataEhClassificacaoAdicionalENaoApagaCategorias()
+    {
+        using var cena = new Cenario();
+        var id = await cena.CriarHistoricoAsync();
+        var pdf = (await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            cena.Banco, id, new FiltrosEntradasM10(Extensao: ".pdf"), 0))
+            .Entradas.Single();
+
+        await using (var db = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            { DataSource = cena.Banco, Pooling = false }.ToString()))
+        {
+            await db.OpenAsync();
+            await using var comando = db.CreateCommand();
+            comando.CommandText = """
+                INSERT INTO grupos_duplicatas
+                    (execucao_id, ordem, tamanho_bytes, sha256, bytes_potenciais)
+                VALUES ($exec, 1, 0, $sha, 0);
+                INSERT INTO membros_duplicatas (execucao_id, ordem_grupo, caminho)
+                VALUES ($exec, 1, $caminho);
+                """;
+            comando.Parameters.AddWithValue("$exec", id);
+            comando.Parameters.AddWithValue("$sha", new string('A', 64));
+            comando.Parameters.AddWithValue("$caminho", pdf.Caminho);
+            await comando.ExecuteNonQueryAsync();
+        }
+
+        var resultado = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            cena.Banco, id, new FiltrosEntradasM10(
+                ApenasDuplicatas: true, Extensao: ".pdf"), 0);
+        Assert.AreEqual(1L, resultado.Total);
+        Assert.HasCount(1, resultado.Entradas);
+        Assert.IsTrue(resultado.Entradas[0].EhDuplicataExata);
+        Assert.AreEqual(pdf.CategoriasJson, resultado.Entradas[0].CategoriasJson);
+    }
+
+    [TestMethod]
     public async Task FiltrosInvalidosNaoConsultamDados()
     {
         using var c = new Cenario();

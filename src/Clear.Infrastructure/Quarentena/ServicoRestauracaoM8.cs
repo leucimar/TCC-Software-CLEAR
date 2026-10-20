@@ -11,7 +11,8 @@ namespace Clear.Infrastructure.Quarentena;
 public sealed record PlanoRestauracaoM8(
     string IdOperacao, string IdExecucao,
     string CaminhoQuarentena, string CaminhoOriginal,
-    long TamanhoBytes, string Sha256Hex);
+    long TamanhoBytes, string Sha256Hex,
+    string? RaizAnalisada = null, string Estrutura = "Legado");
 
 public sealed record ResultadoRestauracaoM8(
     string IdOperacao, string Estado, string CaminhoOriginal,
@@ -37,7 +38,8 @@ public static class ServicoRestauracaoM8
         var plano = new PlanoRestauracaoM8(
             registro.IdOperacao, registro.IdExecucao,
             registro.CaminhoDestino, registro.CaminhoOriginal,
-            registro.TamanhoBytes, registro.Sha256Hex);
+            registro.TamanhoBytes, registro.Sha256Hex,
+            registro.RaizAnalisada, registro.Estrutura);
         await ValidarIntegridadeAsync(plano, cancelamento).ConfigureAwait(false);
         return plano;
     }
@@ -65,7 +67,9 @@ public static class ServicoRestauracaoM8
             || registro.CaminhoDestino != plano.CaminhoQuarentena
             || registro.CaminhoOriginal != plano.CaminhoOriginal
             || registro.TamanhoBytes != plano.TamanhoBytes
-            || registro.Sha256Hex != plano.Sha256Hex)
+            || registro.Sha256Hex != plano.Sha256Hex
+            || registro.RaizAnalisada != plano.RaizAnalisada
+            || registro.Estrutura != plano.Estrutura)
             throw new IOException("O plano não corresponde ao registro de auditoria atual.");
 
         await ValidarIntegridadeAsync(plano, cancelamento).ConfigureAwait(false);
@@ -102,6 +106,12 @@ public static class ServicoRestauracaoM8
             if (gravados != 1)
                 throw new IOException(
                     "Arquivo restaurado, mas não foi possível confirmar o status na auditoria.");
+            // Limpeza SOMENTE de pastas vazias e internas à quarentena,
+            // depois de restauração e auditoria confirmadas. Falha de
+            // limpeza não transforma restauração bem-sucedida em falha.
+            try { RemoverAncestraisVazios(plano); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
             return new ResultadoRestauracaoM8(plano.IdOperacao, "Restaurado",
                 plano.CaminhoOriginal, plano.CaminhoQuarentena, fim);
         }
@@ -141,26 +151,9 @@ public static class ServicoRestauracaoM8
             throw new IOException("Origem e destino não podem ser iguais.");
         if (plano.Sha256Hex.Length != 64 || !plano.Sha256Hex.All(Uri.IsHexDigit))
             throw new InvalidDataException("SHA-256 na auditoria está inválido.");
-        // Suporta registros legados M7: <raiz>/<GUID>/<nome> e registros
-        // novos: <raiz>/<GUID>/<caminho relativo completo da origem>.
-        var diretorio = new DirectoryInfo(Path.GetDirectoryName(fonte)
-            ?? throw new IOException("Caminho da quarentena inválido."));
-        if (!Guid.TryParseExact(plano.IdOperacao, "N", out _))
-            throw new IOException("Identificador de operação inválido.");
-        while (diretorio.Parent is not null &&
-            !string.Equals(diretorio.Name, plano.IdOperacao,
-                StringComparison.OrdinalIgnoreCase))
-            diretorio = diretorio.Parent;
-        if (!string.Equals(diretorio.Name, plano.IdOperacao,
-                StringComparison.OrdinalIgnoreCase) || diretorio.Parent is null)
-            throw new IOException("Pasta da operação auditada não encontrada.");
-        var raizQuarentena = diretorio.Parent.FullName;
-        var relativo = Path.GetRelativePath(diretorio.FullName, fonte);
-        if (Path.IsPathRooted(relativo) || relativo is "." or ".." ||
-            relativo.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || !destino.EndsWith(Path.DirectorySeparatorChar + relativo,
-                StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Hierarquia da quarentena incompatível com a origem.");
+        // Registros antigos: Quarentena/GUID/..., novos:
+        // Quarentena/NomeDaRaiz/... com raiz persistida na auditoria v2.
+        var raizQuarentena = ObterRaizQuarentena(plano, fonte, destino);
         if (string.Equals(raizQuarentena, Path.GetDirectoryName(destino),
                 StringComparison.OrdinalIgnoreCase))
             throw new IOException("Quarentena e origem não podem ser a mesma pasta.");
@@ -203,6 +196,77 @@ public static class ServicoRestauracaoM8
             throw new IOException("SHA-256 ou metadados da quarentena divergentes; restauração bloqueada.");
     }
 
+    private static string ObterRaizQuarentena(PlanoRestauracaoM8 plano,
+        string fonte, string destino)
+    {
+        if (plano.Estrutura == "Compartilhada")
+        {
+            if (string.IsNullOrWhiteSpace(plano.RaizAnalisada))
+                throw new InvalidDataException("A auditoria não contém a raiz analisada.");
+            var raiz = Path.GetFullPath(plano.RaizAnalisada);
+            var relativo = Path.GetRelativePath(raiz, destino);
+            if (Path.IsPathRooted(relativo) || relativo is "." or ".." ||
+                relativo.StartsWith(".." + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+                throw new IOException("Original fora da raiz registrada na auditoria.");
+            var nomeRaiz = Path.GetFileName(Path.TrimEndingDirectorySeparator(raiz));
+            if (string.IsNullOrEmpty(nomeRaiz))
+                throw new IOException("Nome de raiz inválido.");
+            var sufixo = Path.Combine(nomeRaiz, relativo);
+            var raizQuarentena = fonte;
+            foreach (var _ in sufixo.Split(Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar))
+                raizQuarentena = Path.GetDirectoryName(raizQuarentena)
+                    ?? throw new IOException("Quarentena sem hierarquia válida.");
+            if (!string.Equals(Path.GetFullPath(Path.Combine(raizQuarentena, sufixo)),
+                fonte, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Destino auditado não preserva a hierarquia compartilhada.");
+            return raizQuarentena;
+        }
+
+        if (plano.Estrutura != "Legado")
+            throw new InvalidDataException("Estrutura de quarentena desconhecida.");
+        var operacao = new DirectoryInfo(Path.GetDirectoryName(fonte)
+            ?? throw new IOException("Quarentena inválida."));
+        if (!Guid.TryParseExact(plano.IdOperacao, "N", out _))
+            throw new IOException("Identificador antigo inválido.");
+        while (operacao.Parent is not null &&
+            !string.Equals(operacao.Name, plano.IdOperacao, StringComparison.OrdinalIgnoreCase))
+            operacao = operacao.Parent;
+        if (operacao.Parent is null ||
+            !string.Equals(operacao.Name, plano.IdOperacao, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Pasta de operação legada não encontrada.");
+        var relativoLegado = Path.GetRelativePath(operacao.FullName, fonte);
+        if (Path.IsPathRooted(relativoLegado) || relativoLegado is "." or ".." ||
+            relativoLegado.StartsWith(".." + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal) ||
+            !destino.EndsWith(Path.DirectorySeparatorChar + relativoLegado,
+                StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Hierarquia legada incompatível com a origem.");
+        return operacao.Parent.FullName;
+    }
+
+    private static void RemoverAncestraisVazios(PlanoRestauracaoM8 plano)
+    {
+        var fonte = Path.GetFullPath(plano.CaminhoQuarentena);
+        var raiz = ObterRaizQuarentena(plano, fonte,
+            Path.GetFullPath(plano.CaminhoOriginal));
+        for (var pasta = Path.GetDirectoryName(fonte);
+             pasta is not null && !string.Equals(pasta, raiz,
+                 StringComparison.OrdinalIgnoreCase);
+             pasta = Path.GetDirectoryName(pasta))
+        {
+            // Não seguir links nem apagar diretórios não vazios; nunca
+            // remover a raiz configurada da quarentena.
+            if (!Directory.Exists(pasta)) continue;
+            if ((File.GetAttributes(pasta) & FileAttributes.ReparsePoint) != 0)
+                return;
+            if (Directory.EnumerateFileSystemEntries(pasta).Any())
+                return;
+            Directory.Delete(pasta, recursive: false);
+        }
+    }
+
     private static void VerificarDiretorios(string caminho)
     {
         for (DirectoryInfo? pasta = new(Path.GetDirectoryName(caminho)
@@ -218,7 +282,8 @@ public static class ServicoRestauracaoM8
     }
 
     private static async Task<(string IdOperacao, string IdExecucao, string Estado,
-            string CaminhoOriginal, string CaminhoDestino, long TamanhoBytes, string Sha256Hex)>
+            string CaminhoOriginal, string CaminhoDestino, long TamanhoBytes, string Sha256Hex,
+        string? RaizAnalisada, string Estrutura)>
         LerRegistroAsync(string idOperacao, string banco, bool leitura,
             CancellationToken cancelamento)
     {
@@ -229,17 +294,23 @@ public static class ServicoRestauracaoM8
     }
 
     private static async Task<(string IdOperacao, string IdExecucao, string Estado,
-            string CaminhoOriginal, string CaminhoDestino, long TamanhoBytes, string Sha256Hex)>
+            string CaminhoOriginal, string CaminhoDestino, long TamanhoBytes, string Sha256Hex,
+        string? RaizAnalisada, string Estrutura)>
         CarregarAsync(SqliteConnection conexao, string idOperacao,
             CancellationToken cancelamento)
     {
         if (string.IsNullOrWhiteSpace(idOperacao))
             throw new ArgumentException("Selecione uma movimentação auditada.", nameof(idOperacao));
         await using var cmd = conexao.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, execucao_id, estado, original, destino, tamanho, sha256
-            FROM movimentacoes WHERE id = $id LIMIT 1;
-            """;
+        await using var versaoCmd = conexao.CreateCommand();
+        versaoCmd.CommandText = "PRAGMA user_version;";
+        var versao = Convert.ToInt32(await versaoCmd.ExecuteScalarAsync(cancelamento)
+            .ConfigureAwait(false), CultureInfo.InvariantCulture);
+        cmd.CommandText = versao == 1
+            ? "SELECT id, execucao_id, estado, original, destino, tamanho, sha256 " +
+              "FROM movimentacoes WHERE id = $id LIMIT 1"
+            : "SELECT id, execucao_id, estado, original, destino, tamanho, sha256, " +
+              "raiz_analisada, estrutura FROM movimentacoes WHERE id = $id LIMIT 1";
         cmd.Parameters.AddWithValue("$id", idOperacao);
         await using var leitor = await cmd.ExecuteReaderAsync(cancelamento)
             .ConfigureAwait(false);
@@ -247,7 +318,9 @@ public static class ServicoRestauracaoM8
             throw new InvalidOperationException("Movimentação não encontrada na auditoria M7.");
         return (leitor.GetString(0), leitor.GetString(1), leitor.GetString(2),
             leitor.GetString(3), leitor.GetString(4), leitor.GetInt64(5),
-            leitor.GetString(6));
+            leitor.GetString(6),
+            versao == 1 || leitor.IsDBNull(7) ? null : leitor.GetString(7),
+            versao == 1 || leitor.IsDBNull(8) ? "Legado" : leitor.GetString(8));
     }
 
     private static async Task<SqliteConnection> AbrirBancoAsync(
@@ -271,7 +344,7 @@ public static class ServicoRestauracaoM8
             cmd.CommandText = "PRAGMA user_version;";
             var versao = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancelamento)
                 .ConfigureAwait(false), CultureInfo.InvariantCulture);
-            if (versao != ServicoQuarentenaM7.VersaoEsquema)
+            if (versao is not (1 or ServicoQuarentenaM7.VersaoEsquema))
                 throw new InvalidDataException("Versão do banco de auditoria não suportada.");
             return conexao;
         }

@@ -12,7 +12,8 @@ namespace Clear.Infrastructure.Quarentena;
 public sealed record PlanoQuarentenaM7(
     string IdOperacao, string IdExecucao, long IdEntrada, string RaizAnalisada,
     string CaminhoOriginal, string CaminhoDestino, long TamanhoBytes,
-    DateTimeOffset ModificadoUtc, string Sha256Hex);
+    DateTimeOffset ModificadoUtc, string Sha256Hex,
+    string RaizQuarentena = "");
 
 public sealed record RegistroQuarentenaM7(
     string IdOperacao, string Estado, string CaminhoOriginal,
@@ -26,7 +27,7 @@ public sealed record RegistroQuarentenaM7(
 /// </summary>
 public static class ServicoQuarentenaM7
 {
-    public const int VersaoEsquema = 1;
+    public const int VersaoEsquema = 2;
 
     public static string RaizPadrao => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -74,12 +75,15 @@ public static class ServicoQuarentenaM7
         var nome = Path.GetFileName(origem);
         if (string.IsNullOrEmpty(nome))
             throw new IOException("Nome de arquivo inválido.");
-        // Cada operação é isolada por GUID, MAS mantém toda a estrutura
-        // relativa do acervo abaixo dessa pasta.
+        // Diretórios compartilhados pela mesma raiz: Quarentena / NomeDaBase /
+        // caminho relativo completo. O GUID identifica a auditoria, não um diretório.
         var relativo = Path.GetRelativePath(raiz, origem);
-        var caminhoDestino = Path.Combine(destinoRaiz, id, relativo);
+        var nomeRaiz = Path.GetFileName(Path.TrimEndingDirectorySeparator(raiz));
+        if (string.IsNullOrWhiteSpace(nomeRaiz))
+            throw new IOException("Selecione uma pasta raiz nomeada; a raiz do volume não é suportada.");
+        var caminhoDestino = Path.Combine(destinoRaiz, nomeRaiz, relativo);
         return new PlanoQuarentenaM7(id, execucao.Id, entrada.Id, raiz,
-            origem, caminhoDestino, esperado, modificado.ToUniversalTime(), sha);
+            origem, caminhoDestino, esperado, modificado.ToUniversalTime(), sha, destinoRaiz);
     }
 
     /// <summary>
@@ -99,23 +103,22 @@ public static class ServicoQuarentenaM7
             throw new ArgumentException("Banco de auditoria obrigatório.", nameof(bancoAuditoria));
         cancelamento.ThrowIfCancellationRequested();
 
-        // Recupera a pasta de operação pela hierarquia relativa planejada.
-        // Não confia em planos manipulados pelo chamador.
         var relativo = Path.GetRelativePath(plano.RaizAnalisada, plano.CaminhoOriginal);
-        if (!EstaDentro(plano.CaminhoOriginal, plano.RaizAnalisada))
-            throw new IOException("Arquivo fora da raiz original.");
-        var pastaOperacao = plano.CaminhoDestino;
-        foreach (var _ in relativo.Split(Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar))
-            pastaOperacao = Path.GetDirectoryName(pastaOperacao)
-                ?? throw new IOException("Destino da quarentena inválido.");
-        if (!string.Equals(Path.GetFileName(pastaOperacao), plano.IdOperacao,
-                StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(Path.GetFullPath(Path.Combine(pastaOperacao, relativo)),
-                Path.GetFullPath(plano.CaminhoDestino), StringComparison.OrdinalIgnoreCase))
-            throw new IOException("O plano da quarentena não preserva o caminho relativo.");
-        var raizDestino = Path.GetDirectoryName(pastaOperacao)
-            ?? throw new IOException("Raiz da quarentena inválida.");
+        if (!EstaDentro(plano.CaminhoOriginal, plano.RaizAnalisada) ||
+            string.IsNullOrWhiteSpace(plano.RaizQuarentena))
+            throw new IOException("Plano da quarentena sem raiz segura.");
+        var raizDestino = Path.GetFullPath(plano.RaizQuarentena);
+        var nomeRaiz = Path.GetFileName(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(plano.RaizAnalisada)));
+        if (string.IsNullOrWhiteSpace(nomeRaiz))
+            throw new IOException("Raiz analisada inválida para quarentena.");
+        var destinoEsperado = Path.GetFullPath(Path.Combine(raizDestino, nomeRaiz, relativo));
+        if (!string.Equals(destinoEsperado, Path.GetFullPath(plano.CaminhoDestino),
+                StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Plano adulterado: a estrutura de quarentena não corresponde à origem.");
+        if (EstaDentro(raizDestino, plano.RaizAnalisada) ||
+            EstaDentro(plano.CaminhoOriginal, raizDestino))
+            throw new IOException("A quarentena e o acervo não podem conter um ao outro.");
         var banco = Path.GetFullPath(bancoAuditoria);
         var pastaBanco = Path.GetDirectoryName(banco)
             ?? throw new IOException("Caminho SQLite inválido.");
@@ -148,19 +151,42 @@ public static class ServicoQuarentenaM7
         await conexao.OpenAsync(cancelamento).ConfigureAwait(false);
         await PrepararBancoAsync(conexao, cancelamento).ConfigureAwait(false);
 
+        // Evita misturar duas raízes diferentes que tenham o mesmo nome
+        // na mesma árvore compartilhada da quarentena.
+        await using (var verificarDono = conexao.CreateCommand())
+        {
+            verificarDono.CommandText = """
+                SELECT COUNT(*) FROM movimentacoes
+                WHERE estrutura = 'Compartilhada'
+                  AND lower(raiz_analisada) <> lower($raiz)
+                  AND lower(substr(destino, 1, length($prefixo))) = lower($prefixo)
+                  AND estado IN ('Pendente', 'EmQuarentena', 'RestauracaoPendente');
+                """;
+            verificarDono.Parameters.AddWithValue("$raiz", plano.RaizAnalisada);
+            verificarDono.Parameters.AddWithValue("$prefixo",
+                Path.Combine(raizDestino, nomeRaiz) + Path.DirectorySeparatorChar);
+            var conflitos = Convert.ToInt64(
+                await verificarDono.ExecuteScalarAsync(cancelamento).ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+            if (conflitos > 0)
+                throw new IOException("Esta quarentena já possui outra pasta raiz " +
+                    "com o mesmo nome. Escolha uma pasta de quarentena diferente.");
+        }
+
         await ExecutarSqlAsync(conexao, """
             INSERT INTO movimentacoes (
                 id, execucao_id, entrada_id, original, destino, tamanho, sha256,
-                estado, criado_utc, mensagem
+                estado, criado_utc, mensagem, raiz_analisada, estrutura
             ) VALUES (
                 $id, $exec, $entrada, $original, $destino, $tamanho, $sha,
-                'Pendente', $utc, NULL
+                'Pendente', $utc, NULL, $raiz, 'Compartilhada'
             );
             """, cancelamento,
             ("$id", plano.IdOperacao), ("$exec", plano.IdExecucao),
             ("$entrada", plano.IdEntrada), ("$original", plano.CaminhoOriginal),
             ("$destino", plano.CaminhoDestino), ("$tamanho", plano.TamanhoBytes),
             ("$sha", plano.Sha256Hex),
+            ("$raiz", plano.RaizAnalisada),
             ("$utc", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)))
             .ConfigureAwait(false);
 
@@ -295,7 +321,7 @@ public static class ServicoQuarentenaM7
         cmd.CommandText = "PRAGMA user_version;";
         var versao = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancelamento)
             .ConfigureAwait(false), CultureInfo.InvariantCulture);
-        if (versao != 0 && versao != VersaoEsquema)
+        if (versao is not (0 or 1 or VersaoEsquema))
             throw new InvalidDataException("Versão de auditoria SQLite não suportada.");
         if (versao == 0)
         {
@@ -315,13 +341,30 @@ public static class ServicoQuarentenaM7
                     entrada_id INTEGER NOT NULL, original TEXT NOT NULL,
                     destino TEXT NOT NULL, tamanho INTEGER NOT NULL,
                     sha256 TEXT NOT NULL, estado TEXT NOT NULL,
-                    criado_utc TEXT NOT NULL, mensagem TEXT
+                    criado_utc TEXT NOT NULL, mensagem TEXT,
+                    raiz_analisada TEXT, estrutura TEXT
                 );
                 CREATE INDEX idx_movimentacoes_data ON movimentacoes(criado_utc);
-                PRAGMA user_version = 1;
+                PRAGMA user_version = 2;
                 """;
             await criar.ExecuteNonQueryAsync(cancelamento).ConfigureAwait(false);
             await schemaTx.CommitAsync(cancelamento).ConfigureAwait(false);
+        }
+        else if (versao == 1)
+        {
+            // Os ~400 registros existentes permanecem com estrutura Legado,
+            // sem movimentar arquivos ou alterar seus destinos armazenados.
+            await using var migracao = (SqliteTransaction)await conexao
+                .BeginTransactionAsync(cancelamento).ConfigureAwait(false);
+            await using var migrarComando = conexao.CreateCommand();
+            migrarComando.Transaction = migracao;
+            migrarComando.CommandText = """
+                ALTER TABLE movimentacoes ADD COLUMN raiz_analisada TEXT;
+                ALTER TABLE movimentacoes ADD COLUMN estrutura TEXT;
+                PRAGMA user_version = 2;
+                """;
+            await migrarComando.ExecuteNonQueryAsync(cancelamento).ConfigureAwait(false);
+            await migracao.CommitAsync(cancelamento).ConfigureAwait(false);
         }
     }
 
@@ -332,7 +375,7 @@ public static class ServicoQuarentenaM7
         cmd.CommandText = "PRAGMA user_version;";
         var versao = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancelamento)
             .ConfigureAwait(false), CultureInfo.InvariantCulture);
-        if (versao != VersaoEsquema)
+        if (versao is not (1 or VersaoEsquema))
             throw new InvalidDataException("Versão da auditoria SQLite não suportada.");
     }
 

@@ -28,6 +28,14 @@ public sealed class FormDetalhesHistoricoM6 : Form
     {
         Text = "Revisar restauração (M8)", AutoSize = true
     };
+    private readonly Button _restaurarLote = new()
+    {
+        Text = "Filtrar / restaurar vários (M11)", AutoSize = true
+    };
+    private readonly Button _limparVazias = new()
+    {
+        Text = "Limpar pastas VAZIAS auditadas", AutoSize = true
+    };
     private readonly long _totalEntradas;
     private readonly DataGridView _entradas = Grade();
     private readonly DataGridView _duplicatas = Grade();
@@ -128,6 +136,8 @@ public sealed class FormDetalhesHistoricoM6 : Form
         var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill };
         barraAuditoria.Controls.Add(_atualizarAuditoria);
         barraAuditoria.Controls.Add(_restaurarArquivo);
+        barraAuditoria.Controls.Add(_restaurarLote);
+        barraAuditoria.Controls.Add(_limparVazias);
         painelAuditoria.Controls.Add(barraAuditoria, 0, 0);
         painelAuditoria.Controls.Add(_auditoriaQuarentena, 0, 1);
         abaAuditoria.Controls.Add(painelAuditoria);
@@ -154,6 +164,39 @@ public sealed class FormDetalhesHistoricoM6 : Form
         };
         _atualizarAuditoria.Click += async (_, _) => await AtualizarAuditoriaAsync();
         _restaurarArquivo.Click += async (_, _) => await RevisarRestauracaoAsync();
+        _restaurarLote.Click += (_, _) =>
+        {
+            using var janela = new FormRestauracaoLoteM11(
+                _id, ServicoQuarentenaM7.BancoAuditoriaPadrao);
+            janela.ShowDialog(this);
+            _ = AtualizarAuditoriaAsync();
+        };
+        _limparVazias.Click += async (_, _) =>
+        {
+            var resposta = MessageBox.Show(this,
+                "Remover apenas PASTAS VAZIAS associadas aos destinos " +
+                "registrados na auditoria?" + Environment.NewLine +
+                "A quarentena principal e TODOS OS ARQUIVOS serão preservados." +
+                Environment.NewLine + "Pasta: " + _raizQuarentena,
+                "CLEAR — Confirmação da limpeza",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+            if (resposta != DialogResult.Yes) return;
+            _limparVazias.Enabled = false;
+            try
+            {
+                var total = await LimpadorPastasVaziasM11.LimparAsync(
+                    ServicoQuarentenaM7.BancoAuditoriaPadrao, _raizQuarentena, true);
+                MessageBox.Show(this, $"Pastas vazias removidas: {total:N0}." +
+                    Environment.NewLine + "Nenhum arquivo foi apagado.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Falha na limpeza segura: " + ex.Message,
+                    "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally { _limparVazias.Enabled = true; }
+        };
         Shown += async (_, _) =>
         {
             await CarregarEntradasAsync(0);

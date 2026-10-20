@@ -13,7 +13,7 @@ public sealed class QuarentenaHierarquiaM10Tests
         var entrada = pasta.Entrada;
         var plano = await ServicoQuarentenaM7.PrepararAsync(
             entrada, pasta.Execucao, pasta.Quarentena);
-        var esperado = Path.Combine(pasta.Quarentena, plano.IdOperacao,
+        var esperado = Path.Combine(pasta.Quarentena, "Acervo",
             "Financeiro", "2025", "Relatorios", "balanco.xlsx");
         Assert.AreEqual(esperado, plano.CaminhoDestino);
         Assert.IsTrue(File.Exists(pasta.Arquivo));
@@ -33,6 +33,8 @@ public sealed class QuarentenaHierarquiaM10Tests
         Assert.IsTrue(File.Exists(pasta.Arquivo));
         Assert.IsFalse(File.Exists(esperado));
         CollectionAssert.AreEqual(pasta.Conteudo, await File.ReadAllBytesAsync(pasta.Arquivo));
+        Assert.IsFalse(Directory.Exists(Path.Combine(pasta.Quarentena, "Acervo")),
+            "Diretórios vazios da quarentena devem ser removidos após a restauração.");
     }
 
     [TestMethod]

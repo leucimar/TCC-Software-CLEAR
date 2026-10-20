@@ -24,7 +24,10 @@ public static class ConsultaEntradasFiltradasM10
     private const string Colunas = """
         e.id, e.tipo, e.caminho, e.tamanho_bytes, e.modificado_utc,
         e.categorias_json, e.evidencias_json, e.verificacoes_json,
-        e.acima_limite_pessoal
+        e.acima_limite_pessoal,
+        CASE WHEN e.caminho IN
+          (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
+          THEN 1 ELSE 0 END AS eh_duplicata
         """;
 
     private const string Condicoes = """
@@ -142,7 +145,8 @@ public static class ConsultaEntradasFiltradasM10
         r.GetInt64(0), r.GetString(1), r.GetString(2),
         r.IsDBNull(3) ? null : r.GetInt64(3),
         r.IsDBNull(4) ? null : r.GetString(4),
-        r.GetString(5), r.GetString(6), r.GetString(7), r.GetInt64(8) == 1);
+        r.GetString(5), r.GetString(6), r.GetString(7),
+        r.GetInt64(8) == 1, r.GetInt64(9) == 1);
 
     private static void Validar(string execucao, FiltrosEntradasM10 filtro, int pagina)
     {

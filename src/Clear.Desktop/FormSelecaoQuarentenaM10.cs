@@ -76,6 +76,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _categorias.Items.Add("(todas)");
         foreach (var categoria in Enum.GetNames<CategoriaAnalise>())
             _categorias.Items.Add(categoria);
+        _categorias.Items.Add("Duplicata exata");
+        _categorias.Items.Add("Incompatibilidade documentada");
         _categorias.SelectedIndex = 0;
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4,
@@ -126,7 +128,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         });
         _grade.Columns.Add("Caminho", "Arquivo");
         _grade.Columns.Add("Bytes", "Tamanho em bytes");
-        _grade.Columns.Add("Categorias", "Categorias gerais");
+        _grade.Columns.Add("Categorias", "Classificações / indícios simultâneos");
         _grade.Columns.Add("Modificado", "Modificado UTC");
         _grade.Columns.Add("Id", "ID");
         for (var i = 1; i < _grade.Columns.Count; i++)
@@ -194,7 +196,9 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         long? maximo = _filtrarMaximo.Checked
             ? (long)(_maximoMiB.Value * 1024M * 1024M) : null;
         return new FiltrosEntradasM10(
-            Categoria: _categorias.SelectedIndex > 0 ? _categorias.Text : null,
+            Categoria: _categorias.SelectedIndex > 0 &&
+                _categorias.Text is not ("Duplicata exata" or "Incompatibilidade documentada")
+                    ? _categorias.Text : null,
             Extensao: string.IsNullOrWhiteSpace(_extensao.Text) ? null
                 : _extensao.Text.Trim().StartsWith('.') ? _extensao.Text.Trim()
                 : "." + _extensao.Text.Trim(),
@@ -203,8 +207,10 @@ public sealed class FormSelecaoQuarentenaM10 : Form
                 ? DateOnly.FromDateTime(_desde.Value.Date) : null,
             ModificadoAte: _filtrarData.Checked
                 ? DateOnly.FromDateTime(_ate.Value.Date) : null,
-            ApenasIncompatibilidades: _incomp.Checked,
-            ApenasDuplicatas: _duplicatas.Checked,
+            ApenasIncompatibilidades: _incomp.Checked ||
+                _categorias.Text == "Incompatibilidade documentada",
+            ApenasDuplicatas: _duplicatas.Checked ||
+                _categorias.Text == "Duplicata exata",
             ApenasAcimaLimite: _limite.Checked,
             TrechoCaminho: _trecho.Text.Trim());
     }
@@ -241,7 +247,11 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             foreach (var e in _paginaAtual)
             {
                 _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
-                    e.TamanhoBytes ?? 0, e.CategoriasJson,
+                    e.TamanhoBytes ?? 0,
+                    e.CategoriasJson +
+                        (e.EhDuplicataExata ? " | DUPLICATA EXATA" : "") +
+                        (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
+                            StringComparison.Ordinal) ? " | INCOMPATIBILIDADE" : ""),
                     e.ModificadoUtc ?? string.Empty, e.Id);
             }
         }
