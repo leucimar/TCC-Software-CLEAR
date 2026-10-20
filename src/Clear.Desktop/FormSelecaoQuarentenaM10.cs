@@ -17,6 +17,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly string _banco;
     private readonly string _destino;
     private readonly HashSet<long> _selecionados = [];
+    private readonly HashSet<string> _caminhosIndisponiveis = new(StringComparer.OrdinalIgnoreCase);
     private readonly ComboBox _categorias = new()
         { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private readonly TextBox _extensao = new() { Width = 65, PlaceholderText = ".pdf" };
@@ -30,7 +31,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly CheckBox _duplicatas = new() { Text = "Duplicatas", AutoSize = true };
     private readonly CheckBox _limite = new() { Text = "Acima limite", AutoSize = true };
     private readonly CheckBox _filtrarData = new()
-        { Text = "Intervalo de datas", AutoSize = true };
+        { Text = "Último acesso entre datas", AutoSize = true };
     private readonly DateTimePicker _desde = new()
         { Format = DateTimePickerFormat.Short, Width = 110 };
     private readonly DateTimePicker _ate = new()
@@ -41,6 +42,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly Button _anterior = new() { Text = "Anterior", AutoSize = true };
     private readonly Button _proximo = new() { Text = "Próxima", AutoSize = true };
     private readonly Button _selecionarPagina = new() { Text = "Selecionar página", AutoSize = true };
+    private readonly Button _selecionarTodos = new()
+        { Text = "Selecionar TODOS filtrados (até 10.000)", AutoSize = true };
     private readonly Button _limpar = new() { Text = "Limpar seleção", AutoSize = true };
     private readonly Button _mover = new()
         { Text = "Revisar e movimentar SELECIONADOS", AutoSize = true };
@@ -50,7 +53,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     {
         Dock = DockStyle.Fill, ReadOnly = false, AllowUserToAddRows = false,
         AllowUserToDeleteRows = false, MultiSelect = false,
-        RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
+        RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect
     };
     private readonly TextBox _erros = new()
@@ -71,24 +74,27 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _destino = destino;
         Text = "CLEAR — Filtrar, selecionar e revisar quarentena (SEM AÇÃO AUTOMÁTICA)";
         MinimumSize = new Size(1120, 670);
-        Size = new Size(1400, 820);
+        Size = new Size(1500, 860);
 
         _categorias.Items.Add("(todas)");
         foreach (var categoria in Enum.GetNames<CategoriaAnalise>())
             _categorias.Items.Add(categoria);
         _categorias.Items.Add("Duplicata exata");
         _categorias.Items.Add("Incompatibilidade documentada");
+        _categorias.Items.Add("Sem alertas detectados");
+        _categorias.Items.Add("Com indícios ou alertas");
         _categorias.SelectedIndex = 0;
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4,
             ColumnCount = 1, Padding = new Padding(8) };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
 
         var filtros = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true,
-            FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+            FlowDirection = FlowDirection.LeftToRight, WrapContents = true,
+            Padding = new Padding(4), BackColor = SystemColors.ControlLight };
         filtros.Controls.Add(new Label { Text = "Categoria:", AutoSize = true });
         filtros.Controls.Add(_categorias);
         filtros.Controls.Add(new Label { Text = "Extensão:", AutoSize = true });
@@ -110,7 +116,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
 
         var barra = new FlowLayoutPanel { Dock = DockStyle.Fill };
         foreach (var controle in new Control[] { _anterior, _proximo,
-            _selecionarPagina, _limpar, _mover, _cancelar })
+            _selecionarPagina, _selecionarTodos, _limpar, _mover, _cancelar })
             barra.Controls.Add(controle);
         layout.Controls.Add(barra, 0, 1);
         layout.Controls.Add(_grade, 0, 2);
@@ -129,8 +135,18 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _grade.Columns.Add("Caminho", "Arquivo");
         _grade.Columns.Add("Bytes", "Tamanho em bytes");
         _grade.Columns.Add("Categorias", "Classificações / indícios simultâneos");
-        _grade.Columns.Add("Modificado", "Modificado UTC");
+        _grade.Columns.Add("Acessado", "Último acesso UTC");
+        _grade.Columns.Add("Modificado", "Modificado UTC (auditoria)");
         _grade.Columns.Add("Id", "ID");
+        _grade.Columns["Id"]!.Visible = false;
+        ((DataGridViewCheckBoxColumn)_grade.Columns["Marcado"]!).AutoSizeMode =
+            DataGridViewAutoSizeColumnMode.None;
+        _grade.Columns["Marcado"]!.Width = 75;
+        _grade.Columns["Caminho"]!.FillWeight = 65;
+        _grade.Columns["Categorias"]!.FillWeight = 30;
+        _grade.Columns["Bytes"]!.FillWeight = 12;
+        _grade.Columns["Acessado"]!.FillWeight = 22;
+        _grade.Columns["Modificado"]!.FillWeight = 22;
         for (var i = 1; i < _grade.Columns.Count; i++)
             _grade.Columns[i].ReadOnly = true;
 
@@ -171,6 +187,30 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             AtualizarMarcacoes();
             ExibirEstado();
         };
+        _selecionarTodos.Click += async (_, _) =>
+        {
+            if (_executando || _carregando) return;
+            var resposta = MessageBox.Show(this,
+                "Selecionar TODOS os arquivos elegíveis que atendem aos filtros atuais? " +
+                "Limite: 10.000 itens por operação. Selecionar NÃO MOVIMENTA arquivos. " +
+                "A movimentação exigirá confirmação posterior.",
+                "CLEAR — Seleção global explícita", MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (resposta != DialogResult.Yes) return;
+            try
+            {
+                await AtualizarCaminhosIndisponiveisAsync();
+                var encontrados = await ConsultaEntradasFiltradasM10.SelecionarTodosFiltradosAsync(
+                    _banco, _execucao.Id, _filtro, _caminhosIndisponiveis);
+                if (_selecionados.Concat(encontrados).Distinct().Take(10001).Count() > 10000)
+                    throw new InvalidOperationException(
+                        "A seleção acumulada excede 10.000 arquivos. Limpe a seleção ou refine os filtros.");
+                foreach (var id in encontrados) _selecionados.Add(id);
+                AtualizarMarcacoes();
+                ExibirEstado();
+            }
+            catch (Exception ex) { _estado.Text = "Falha na seleção global: " + ex.Message; }
+        };
         _limpar.Click += (_, _) =>
         {
             _selecionados.Clear();
@@ -197,22 +237,33 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             ? (long)(_maximoMiB.Value * 1024M * 1024M) : null;
         return new FiltrosEntradasM10(
             Categoria: _categorias.SelectedIndex > 0 &&
-                _categorias.Text is not ("Duplicata exata" or "Incompatibilidade documentada")
+                _categorias.Text is not ("Duplicata exata" or "Incompatibilidade documentada" or
+                    "Sem alertas detectados" or "Com indícios ou alertas")
                     ? _categorias.Text : null,
             Extensao: string.IsNullOrWhiteSpace(_extensao.Text) ? null
                 : _extensao.Text.Trim().StartsWith('.') ? _extensao.Text.Trim()
                 : "." + _extensao.Text.Trim(),
             MinimoBytes: minimo, MaximoBytes: maximo,
-            ModificadoDesde: _filtrarData.Checked
+            AcessadoDesde: _filtrarData.Checked
                 ? DateOnly.FromDateTime(_desde.Value.Date) : null,
-            ModificadoAte: _filtrarData.Checked
+            AcessadoAte: _filtrarData.Checked
                 ? DateOnly.FromDateTime(_ate.Value.Date) : null,
             ApenasIncompatibilidades: _incomp.Checked ||
                 _categorias.Text == "Incompatibilidade documentada",
             ApenasDuplicatas: _duplicatas.Checked ||
                 _categorias.Text == "Duplicata exata",
             ApenasAcimaLimite: _limite.Checked,
-            TrechoCaminho: _trecho.Text.Trim());
+            TrechoCaminho: _trecho.Text.Trim(),
+            ApenasSemAlertas: _categorias.Text == "Sem alertas detectados",
+            ApenasComAlertas: _categorias.Text == "Com indícios ou alertas");
+    }
+
+    private async Task AtualizarCaminhosIndisponiveisAsync()
+    {
+        var bloqueados = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(
+            ServicoQuarentenaM7.BancoAuditoriaPadrao);
+        _caminhosIndisponiveis.Clear();
+        _caminhosIndisponiveis.UnionWith(bloqueados);
     }
 
     private async Task CarregarAsync(int pagina)
@@ -222,12 +273,20 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _buscar.Enabled = false;
         try
         {
+            await AtualizarCaminhosIndisponiveisAsync();
             var consulta = await ConsultaEntradasFiltradasM10.ConsultarAsync(
                 _banco, _execucao.Id, _filtro, pagina);
-            if (pagina > 0 && consulta.Entradas.Count == 0) return;
+            if (pagina > 0 && consulta.Entradas.Count == 0)
+            {
+                pagina = (int)Math.Max(0, (consulta.Total - 1) /
+                    ConsultaHistoricoSqliteM6.TamanhoPagina);
+                consulta = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+                    _banco, _execucao.Id, _filtro, pagina);
+            }
             _pagina = pagina;
             _totalFiltrado = consulta.Total;
-            _paginaAtual = consulta.Entradas.ToList();
+            _paginaAtual = consulta.Entradas.Where(e =>
+                !_caminhosIndisponiveis.Contains(e.Caminho)).ToList();
             AtualizarMarcacoes();
             _anterior.Enabled = pagina > 0;
             _proximo.Enabled = (long)(pagina + 1) *
@@ -248,20 +307,25 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             {
                 _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
                     e.TamanhoBytes ?? 0,
-                    e.CategoriasJson +
+                    (e.CategoriasJson == "[]" ? "Sem alertas gerais" : e.CategoriasJson) +
+                        (e.AcimaDoLimitePessoal ? " | ACIMA LIMITE" : "") +
                         (e.EhDuplicataExata ? " | DUPLICATA EXATA" : "") +
                         (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
-                            StringComparison.Ordinal) ? " | INCOMPATIBILIDADE" : ""),
-                    e.ModificadoUtc ?? string.Empty, e.Id);
+                            StringComparison.Ordinal) ? " | INCOMPATIBILIDADE" : "") +
+                        (e.CategoriasJson == "[]" && !e.AcimaDoLimitePessoal &&
+                         !e.EhDuplicataExata &&
+                         !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
+                             StringComparison.Ordinal) ? " | SEM ALERTAS DETECTADOS" : ""),
+                    e.AcessadoUtc ?? "Indisponível", e.ModificadoUtc ?? string.Empty, e.Id);
             }
         }
         finally { _carregando = false; }
     }
 
     private void ExibirEstado() =>
-        _estado.Text = $"Filtro: {_totalFiltrado:N0} arquivo(s) | Página {_pagina + 1}" +
-            $" | Selecionados explicitamente: {_selecionados.Count:N0}. " +
-            "Seleção mantém IDs ao navegar; filtros não selecionam automaticamente.";
+        _estado.Text = $"Histórico filtrado: {_totalFiltrado:N0} | Disponíveis nesta página: {_paginaAtual.Count:N0}" +
+            $" | Página {_pagina + 1} | Marcados: {_selecionados.Count:N0}. " +
+            "Itens em quarentena ficam ocultos. Sem alertas não significa aprovado.";
 
     private async Task ExecutarSelecaoAsync()
     {
@@ -285,8 +349,12 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         long tamanho;
         try
         {
+            await AtualizarCaminhosIndisponiveisAsync();
             entradas = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(
                 _banco, _execucao.Id, ids);
+            if (entradas.Any(e => _caminhosIndisponiveis.Contains(e.Caminho)))
+                throw new InvalidOperationException(
+                    "Há arquivos já ocupados pela quarentena. Limpe a seleção e recarregue a lista.");
             tamanho = entradas.Aggregate(0L,
                 (soma, e) => checked(soma + (e.TamanhoBytes ?? 0)));
         }
@@ -326,6 +394,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _cancelar.Enabled = true;
         _buscar.Enabled = false;
         _selecionarPagina.Enabled = false;
+        _selecionarTodos.Enabled = false;
+        _grade.Enabled = false;
         _limpar.Enabled = false;
         var cronometro = Stopwatch.StartNew();
         long bytesConcluidos = 0;
@@ -382,6 +452,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             _cancelar.Enabled = false;
             _buscar.Enabled = true;
             _selecionarPagina.Enabled = true;
+            _selecionarTodos.Enabled = true;
+            _grade.Enabled = true;
             _limpar.Enabled = true;
             await CarregarAsync(_pagina);
         }
