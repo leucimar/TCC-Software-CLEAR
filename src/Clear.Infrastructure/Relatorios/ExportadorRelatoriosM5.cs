@@ -121,6 +121,8 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             .Where(x => x.Estado == EstadoVerificacao.IncompatibilidadeDocumentada).ToArray();
         var temIndicios = classificacaoGeral?.Categorias.Count > 0;
         var temIncompatibilidade = incompatibilidades.Length > 0;
+        var temAlertaCompatibilidade = avaliacaoCompatibilidade.Verificacoes.Any(x =>
+            x.Estado == EstadoVerificacao.Alerta);
         var excede = avaliacaoCompatibilidade.AcimaDoLimitePersonalizado;
 
         var incluir = _filtro switch
@@ -153,7 +155,7 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             entrada.Arquivo?.UltimoAcessoUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
             string.Join(" | ", classificacaoGeral?.Categorias.Select(x => x.ToString())
                 ?? Enumerable.Empty<string>()),
-            temIndicios || temIncompatibilidade || excede ?
+            temIndicios || temIncompatibilidade || temAlertaCompatibilidade || excede ?
                 "Com indicios/alertas" : "Sem alertas detectados (nao significa aprovado)",
             string.Join(" | ", classificacaoGeral?.Evidencias.Select(x => x.Justificativa)
                 ?? Enumerable.Empty<string>()),
