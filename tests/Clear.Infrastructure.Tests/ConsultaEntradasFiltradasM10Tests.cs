@@ -17,8 +17,8 @@ public sealed class ConsultaEntradasFiltradasM10Tests
         var filtro = new FiltrosEntradasM10(
             Categoria: "CopiaBackupOuTemporario",
             Extensao: ".bak", MinimoBytes: 5, MaximoBytes: 50,
-            ModificadoDesde: new DateOnly(2025, 1, 1),
-            ModificadoAte: new DateOnly(2025, 12, 31));
+            AcessadoDesde: new DateOnly(2025, 1, 1),
+            AcessadoAte: new DateOnly(2025, 12, 31));
         var (dados, total) = await ConsultaEntradasFiltradasM10.ConsultarAsync(
             c.Banco, id, filtro, 0);
         Assert.AreEqual(1L, total);
@@ -145,10 +145,10 @@ public sealed class ConsultaEntradasFiltradasM10Tests
             var data = new DateTimeOffset(2025, 4, 15, 0, 0, 0, TimeSpan.Zero);
             var entradas = new[]
             {
-                new ArquivoInventariado(Path.Combine(Origem, "relatorio.bak"), 20, data),
-                new ArquivoInventariado(Path.Combine(Origem, "outro.bak"), 100, data),
-                new ArquivoInventariado(Path.Combine(Origem, "arquivo.pdf"), 0, data),
-                new ArquivoInventariado(Path.Combine(Origem, "tabela.csv"), 32, data)
+                new ArquivoInventariado(Path.Combine(Origem, "relatorio.bak"), 20, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "outro.bak"), 100, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "arquivo.pdf"), 0, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "tabela.csv"), 32, data, data)
             }.Select(EntradaInventariada.DeArquivo).ToArray();
             await using var sessao = await SessaoHistoricoSqliteM6.IniciarAsync(
                 Origem, Banco, ParametrosHistoricoM6.SemFiltros);
