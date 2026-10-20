@@ -307,7 +307,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             {
                 _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
                     e.TamanhoBytes ?? 0,
-                    (e.CategoriasJson == "[]" ? "Sem alertas gerais" : e.CategoriasJson) +
+                    (e.CategoriasJson == "[]" ? "" : e.CategoriasJson) +
                         (e.AcimaDoLimitePessoal ? " | ACIMA LIMITE" : "") +
                         (e.EhDuplicataExata ? " | DUPLICATA EXATA" : "") +
                         (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
@@ -315,7 +315,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
                         (e.CategoriasJson == "[]" && !e.AcimaDoLimitePessoal &&
                          !e.EhDuplicataExata &&
                          !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
-                             StringComparison.Ordinal) ? " | SEM ALERTAS DETECTADOS" : ""),
+                             StringComparison.Ordinal) ? "SEM ALERTAS DETECTADOS (não significa aprovado)" : ""),
                     e.AcessadoUtc ?? "Indisponível", e.ModificadoUtc ?? string.Empty, e.Id);
             }
         }
