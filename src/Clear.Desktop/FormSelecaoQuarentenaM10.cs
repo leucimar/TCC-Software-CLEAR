@@ -312,9 +312,13 @@ public sealed class FormSelecaoQuarentenaM10 : Form
                         (e.EhDuplicataExata ? " | DUPLICATA EXATA" : "") +
                         (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
                             StringComparison.Ordinal) ? " | INCOMPATIBILIDADE" : "") +
+                        (e.VerificacoesJson.Contains("\"Estado\":\"Alerta\"",
+                            StringComparison.Ordinal) ? " | ALERTA COMPATIBILIDADE" : "") +
                         (e.CategoriasJson == "[]" && !e.AcimaDoLimitePessoal &&
                          !e.EhDuplicataExata &&
                          !e.VerificacoesJson.Contains("IncompatibilidadeDocumentada",
+                             StringComparison.Ordinal) &&
+                         !e.VerificacoesJson.Contains("\\"Estado\\":\\"Alerta\\"",
                              StringComparison.Ordinal) ? "SEM ALERTAS DETECTADOS (não significa aprovado)" : ""),
                     e.AcessadoUtc ?? "Indisponível", e.ModificadoUtc ?? string.Empty, e.Id);
             }
