@@ -979,13 +979,20 @@ public partial class Form1 : Form
                     Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
                     Caminho = item.Entrada.CaminhoCompleto,
                     Bytes = item.Entrada.TamanhoBytes,
-                    IndiciosGerais = gerais,
+                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
                     Compatibilidade = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Estado)),
                     Justificativas = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Justificativa)),
                     FiltroPersonalizado = item.AcimaDoLimitePersonalizado
                         ? "Acima do limite pessoal" : "",
+                    SituacaoPreAnalise = arquivo is null ? "Pasta (não aplicável)" :
+                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
+                        !relevantes.Any(x => x.Estado is
+                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
+                            ? "Sem alertas detectados (não significa aprovado)"
+                            : "Com indícios ou alertas",
+                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
                     ModificadoUtc = arquivo?.UltimaModificacaoUtc
                 };
             }).ToList();
