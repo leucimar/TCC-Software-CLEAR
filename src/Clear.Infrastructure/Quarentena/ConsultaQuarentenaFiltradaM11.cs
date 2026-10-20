@@ -13,6 +13,28 @@ public static class ConsultaQuarentenaFiltradaM11
     public const int TamanhoPagina = 200;
     public const int MaximoLote = 10000;
 
+    /// <summary>
+    /// Identifica arquivos ainda ocupados pela quarentena, inclusive de análises
+    /// anteriores. Lê a auditoria sem alterá-la; a UI não reoferece esses caminhos.
+    /// </summary>
+    public static async Task<IReadOnlySet<string>> CaminhosIndisponiveisAsync(
+        string banco, CancellationToken ct = default)
+    {
+        var caminhos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(banco) || !File.Exists(banco))
+            return caminhos;
+        await using var db = await AbrirAsync(banco, ct).ConfigureAwait(false);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT original FROM movimentacoes
+            WHERE estado IN ('EmQuarentena', 'Pendente', 'RestauracaoPendente');
+            """;
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            caminhos.Add(reader.GetString(0));
+        return caminhos;
+    }
+
     private const string Condicoes = """
         execucao_id = $exec
         AND estado = 'EmQuarentena'
