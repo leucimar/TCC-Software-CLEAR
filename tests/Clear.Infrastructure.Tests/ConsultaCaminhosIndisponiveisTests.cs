@@ -32,11 +32,11 @@ public sealed class ConsultaCaminhosIndisponiveisTests
                 await using var cmd = db.CreateCommand();
                 cmd.CommandText = """
                     CREATE TABLE movimentacoes (original TEXT NOT NULL, estado TEXT NOT NULL);
-                    INSERT INTO movimentacoes VALUES ('C:\\Base\\A.txt', 'EmQuarentena');
-                    INSERT INTO movimentacoes VALUES ('C:\\Base\\B.txt', 'Pendente');
-                    INSERT INTO movimentacoes VALUES ('C:\\Base\\C.txt', 'RestauracaoPendente');
-                    INSERT INTO movimentacoes VALUES ('C:\\Base\\D.txt', 'Restaurado');
-                    INSERT INTO movimentacoes VALUES ('C:\\Base\\E.txt', 'Falha');
+                    INSERT INTO movimentacoes VALUES ('C:\Base\A.txt', 'EmQuarentena');
+                    INSERT INTO movimentacoes VALUES ('C:\Base\B.txt', 'Pendente');
+                    INSERT INTO movimentacoes VALUES ('C:\Base\C.txt', 'RestauracaoPendente');
+                    INSERT INTO movimentacoes VALUES ('C:\Base\D.txt', 'Restaurado');
+                    INSERT INTO movimentacoes VALUES ('C:\Base\E.txt', 'Falha');
                     PRAGMA user_version = 2;
                     """;
                 await cmd.ExecuteNonQueryAsync();
