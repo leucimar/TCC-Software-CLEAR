@@ -69,6 +69,16 @@ A Parte 2 também limita a quantidade de arquivos indexados simultaneamente em R
 
 Uma retomada incremental real, com checkpoints de dados validados, limitação mais precisa de memória e reutilização segura de classificações/hashes continuam pendentes. Ações de quarentena/restauração continuam exigindo confirmação humana independente.
 
+## Sub-base experimental estratificada (feature em validação)
+
+Botão **Criar sub-base experimental (SOMENTE CÓPIA)** nos filtros gerais. Selecione origem, pasta de destino **nova e fora da origem**, percentual (padrão 30%) e semente. **Calcular prévia** estima quantidade, volume e distribuição por pacote/pasta principal, extensão e faixa de tamanho; **Confirmar e COPIAR** exige resposta humana afirmativa.
+
+**Invariante:** todos os arquivos escolhidos são COPIADOS e continuam presentes na base original; a ferramenta não move, exclui nem sobrescreve arquivos da origem. As cópias preservam seus caminhos relativos dentro de Acervo e são verificadas via SHA-256 origem/destino. Quantidade de arquivos segue a meta exata quando possível; bytes ficam próximos do alvo, com percentuais efetivos expostos, já que arquivos não podem ser divididos. Pastas sem nenhum arquivo escolhido podem não aparecer.
+
+Os manifestos resumo JSON e arquivos JSONL tornam a seleção reproduzível. A cópia é construída em um diretório temporário marcado como EM_CONSTRUCAO e somente publicada ao concluir; cancelamento ou falha deixam esse estágio incompleto para inspeção/limpeza manual. O destino não pode conter o acervo nem já existir. Primeiro valide com dados sintéticos em C:\Temp; não executar imediatamente sobre os 86 GB.
+
+Detalhes e riscos: docs/architecture/Marco_SubBase_Experimental_Estratificada.md e docs/tests/Roteiro_Validacao_SubBase_Experimental.md. **Novos testes ainda precisam ser executados no Windows antes de qualquer integração.** A seleção de pasta de quarentena, preservação física da hierarquia na quarentena e seleção parcial por filtros são outros incrementos.
+
 ## Estado
 
-M0–M2 integrados à main. M3–M8 e M9 Parte 1 integrados à develop. O usuário confirmou 198/198 testes, compilação sem avisos, benchmarks de 500 e 2.000 arquivos e controle de concorrência funcional na interface M9 Parte 1. M9 Parte 2 está em feature/checkpoint-reinicio-seguro-m9-parte2, sem compilação ou testes locais ainda (210 previstos); nenhum merge desta parte foi feito. A main permanece inalterada.
+M0–M9 Parte 2 integrados à main e à develop (árvores de arquivos equivalentes na última sincronização). Na Parte 2, o usuário informou 210/210 testes aprovados; permanece o aviso MSTEST0037 e a validação manual do cancelamento/reinício integral. A sub-base experimental está apenas em feature/subbase-experimental-estratificada, com 14 testes adicionais propostos (total esperado 224), ainda sem execução local registrada. Não fazer merge automático.
