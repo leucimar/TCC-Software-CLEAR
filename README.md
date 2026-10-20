@@ -79,6 +79,16 @@ Os manifestos resumo JSON e arquivos JSONL tornam a seleção reproduzível. A c
 
 Detalhes e riscos: docs/architecture/Marco_SubBase_Experimental_Estratificada.md e docs/tests/Roteiro_Validacao_SubBase_Experimental.md. **Novos testes ainda precisam ser executados no Windows antes de qualquer integração.** A seleção de pasta de quarentena, preservação física da hierarquia na quarentena e seleção parcial por filtros são outros incrementos.
 
+## Fluxo de quarentena e ETA — feature em validação (entrega consolidada)
+
+- **Destinos visíveis antes de analisar:** quarentena sugerida no mesmo volume da origem e pasta de relatórios em LOCALAPPDATA/CLEAR/Relatorios, ambos personalizáveis. O envio à quarentena exige histórico M6 e confirmação humana, mesmo para arquivo individual.
+- **Hierarquia física da quarentena:** M7 armazena em Quarentena / GUID / caminho relativo completo; M8 valida a estrutura e mantém suporte à disposição legada Quarentena / GUID / nome. Auditoria SQLite existente preservada.
+- **Filtro + seleção parcial:** na consulta detalhada M6, abra Filtrar e selecionar para quarentena. Filtros por classificação, nome/extensão, tamanho, datas, incompatibilidades e duplicatas. Seleção identificada por ID entre páginas; o filtro não seleciona automaticamente. Somente arquivos marcados explicitamente são elegíveis a movimentação, mediante confirmação separada e revalidação individual SHA-256. Operações bem-sucedidas de um lote não são revertidas se outro arquivo falhar.
+- **Progresso/ETA observacional:** sub-base (quantidade + bytes), inventário/classificação (pré-contagem de arquivos), fase SHA-256 e quarentena em lote (quantidade + bytes). Prazos variam conforme cache, antivírus, formatos e tamanho dos arquivos; relatórios finais e confirmação SQLite ainda não têm ETA.
+- **Regras de segurança:** sem mover, excluir ou reescrever arquivos sem confirmação; quarentena mantém exigência de mesmo volume. Testar SOMENTE em dados sintéticos, em C:\Temp. Nunca mandar o acervo original público à quarentena.
+
+Documentação: docs/architecture/Marco_M10_Fluxo_Quarentena_Selecao_ETA.md. Validação conjunta: docs/tests/Roteiro_Validacao_M10_Entrega_Consolidada.md.
+
 ## Estado
 
 M0–M9 Parte 2 integrados à main e à develop (árvores de arquivos equivalentes na última sincronização). Na Parte 2, o usuário informou 210/210 testes aprovados; permanece o aviso MSTEST0037 e a validação manual do cancelamento/reinício integral. A sub-base experimental está apenas em feature/subbase-experimental-estratificada, com 14 testes adicionais propostos (total esperado 224), ainda sem execução local registrada. Não fazer merge automático.

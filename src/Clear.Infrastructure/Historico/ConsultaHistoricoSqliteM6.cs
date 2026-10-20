@@ -6,7 +6,8 @@ namespace Clear.Infrastructure.Historico;
 public sealed record EntradaHistoricaM6(
     long Id, string Tipo, string Caminho, long? TamanhoBytes,
     string? ModificadoUtc, string CategoriasJson, string EvidenciasJson,
-    string VerificacoesJson, bool AcimaDoLimitePessoal);
+    string VerificacoesJson, bool AcimaDoLimitePessoal,
+    bool EhDuplicataExata = false);
 
 public sealed record MembroDuplicataHistoricaM6(
     long Grupo, long TamanhoBytes, string Sha256,
