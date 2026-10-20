@@ -12,12 +12,14 @@ public sealed record FiltrosEntradasM10(
     string? Extensao = null,
     long? MinimoBytes = null,
     long? MaximoBytes = null,
-    DateOnly? ModificadoDesde = null,
-    DateOnly? ModificadoAte = null,
+    DateOnly? AcessadoDesde = null,
+    DateOnly? AcessadoAte = null,
     bool ApenasIncompatibilidades = false,
     bool ApenasDuplicatas = false,
     bool ApenasAcimaLimite = false,
-    string? TrechoCaminho = null);
+    string? TrechoCaminho = null,
+    bool ApenasSemAlertas = false,
+    bool ApenasComAlertas = false);
 
 public static class ConsultaEntradasFiltradasM10
 {
@@ -27,7 +29,8 @@ public static class ConsultaEntradasFiltradasM10
         e.acima_limite_pessoal,
         CASE WHEN e.caminho IN
           (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
-          THEN 1 ELSE 0 END AS eh_duplicata
+          THEN 1 ELSE 0 END AS eh_duplicata,
+        e.acessado_utc
         """;
 
     private const string Condicoes = """
@@ -38,8 +41,8 @@ public static class ConsultaEntradasFiltradasM10
         AND ($ext = '' OR lower(substr(e.caminho, -length($ext))) = lower($ext))
         AND ($minimo < 0 OR e.tamanho_bytes >= $minimo)
         AND ($maximo < 0 OR e.tamanho_bytes <= $maximo)
-        AND ($desde = '' OR substr(e.modificado_utc, 1, 10) >= $desde)
-        AND ($ate = '' OR substr(e.modificado_utc, 1, 10) <= $ate)
+        AND ($desde = '' OR substr(e.acessado_utc, 1, 10) >= $desde)
+        AND ($ate = '' OR substr(e.acessado_utc, 1, 10) <= $ate)
         AND ($incomp = 0 OR EXISTS
              (SELECT 1 FROM json_each(e.verificacoes_json) AS v
               WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada'))
@@ -48,6 +51,16 @@ public static class ConsultaEntradasFiltradasM10
               WHERE m.execucao_id = $exec))
         AND ($limite = 0 OR e.acima_limite_pessoal = 1)
         AND ($trecho = '' OR instr(lower(e.caminho), lower($trecho)) > 0)
+        AND ($sem = 0 OR (
+            json_array_length(e.categorias_json) = 0 AND e.acima_limite_pessoal = 0
+            AND e.caminho NOT IN (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
+            AND NOT EXISTS (SELECT 1 FROM json_each(e.verificacoes_json) AS v
+                WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada')))
+        AND ($com = 0 OR (
+            json_array_length(e.categorias_json) > 0 OR e.acima_limite_pessoal = 1
+            OR e.caminho IN (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
+            OR EXISTS (SELECT 1 FROM json_each(e.verificacoes_json) AS v
+                WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada')))
         """;
 
     public static async Task<(IReadOnlyList<EntradaHistoricaM6> Entradas, long Total)>
@@ -76,6 +89,35 @@ public static class ConsultaEntradasFiltradasM10
             entries.Add(Mapear(reader));
         }
         return (entries.AsReadOnly(), total);
+    }
+
+    /// <summary>
+    /// Seleção GLOBAL de resultados filtrados, acionada somente após confirmação na interface.
+    /// Descarta caminhos com operações ainda ativas na quarentena e nunca trunca silenciosamente.
+    /// </summary>
+    public static async Task<IReadOnlyList<long>> SelecionarTodosFiltradosAsync(
+        string banco, string execucao, FiltrosEntradasM10 filtro,
+        IReadOnlySet<string> caminhosIndisponiveis, CancellationToken token = default)
+    {
+        Validar(execucao, filtro, 0);
+        ArgumentNullException.ThrowIfNull(caminhosIndisponiveis);
+        await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT e.id, e.caminho FROM entradas AS e WHERE " + Condicoes +
+            " ORDER BY e.id";
+        Parametros(cmd, execucao, filtro);
+        var ids = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false);
+        while (await reader.ReadAsync(token).ConfigureAwait(false))
+        {
+            if (caminhosIndisponiveis.Contains(reader.GetString(1)))
+                continue;
+            ids.Add(reader.GetInt64(0));
+            if (ids.Count > 10000)
+                throw new InvalidOperationException(
+                    "Mais de 10.000 arquivos elegíveis. Refine os filtros ou divida em lotes.");
+        }
+        return ids.AsReadOnly();
     }
 
     public static async Task<EntradaHistoricaM6> ConsultarPorIdAsync(
@@ -146,7 +188,8 @@ public static class ConsultaEntradasFiltradasM10
         r.IsDBNull(3) ? null : r.GetInt64(3),
         r.IsDBNull(4) ? null : r.GetString(4),
         r.GetString(5), r.GetString(6), r.GetString(7),
-        r.GetInt64(8) == 1, r.GetInt64(9) == 1);
+        r.GetInt64(8) == 1, r.GetInt64(9) == 1,
+        r.IsDBNull(10) ? null : r.GetString(10));
 
     private static void Validar(string execucao, FiltrosEntradasM10 filtro, int pagina)
     {
@@ -158,7 +201,9 @@ public static class ConsultaEntradasFiltradasM10
             filtro.MinimoBytes > filtro.MaximoBytes &&
             filtro.MaximoBytes is not null)
             throw new ArgumentException("Intervalo de tamanho inválido.");
-        if (filtro.ModificadoDesde > filtro.ModificadoAte)
+        if (filtro.ApenasSemAlertas && filtro.ApenasComAlertas)
+            throw new ArgumentException("Escolha somente um filtro de alertas.");
+        if (filtro.AcessadoDesde > filtro.AcessadoAte)
             throw new ArgumentException("Intervalo de datas inválido.");
     }
 
@@ -169,14 +214,16 @@ public static class ConsultaEntradasFiltradasM10
         cmd.Parameters.AddWithValue("$ext", f.Extensao ?? "");
         cmd.Parameters.AddWithValue("$minimo", f.MinimoBytes ?? -1);
         cmd.Parameters.AddWithValue("$maximo", f.MaximoBytes ?? -1);
-        cmd.Parameters.AddWithValue("$desde", f.ModificadoDesde?.ToString("yyyy-MM-dd",
+        cmd.Parameters.AddWithValue("$desde", f.AcessadoDesde?.ToString("yyyy-MM-dd",
             CultureInfo.InvariantCulture) ?? "");
-        cmd.Parameters.AddWithValue("$ate", f.ModificadoAte?.ToString("yyyy-MM-dd",
+        cmd.Parameters.AddWithValue("$ate", f.AcessadoAte?.ToString("yyyy-MM-dd",
             CultureInfo.InvariantCulture) ?? "");
         cmd.Parameters.AddWithValue("$incomp", f.ApenasIncompatibilidades ? 1 : 0);
         cmd.Parameters.AddWithValue("$dup", f.ApenasDuplicatas ? 1 : 0);
         cmd.Parameters.AddWithValue("$limite", f.ApenasAcimaLimite ? 1 : 0);
         cmd.Parameters.AddWithValue("$trecho", f.TrechoCaminho ?? "");
+        cmd.Parameters.AddWithValue("$sem", f.ApenasSemAlertas ? 1 : 0);
+        cmd.Parameters.AddWithValue("$com", f.ApenasComAlertas ? 1 : 0);
     }
 
     private static async Task<SqliteConnection> AbrirAsync(string banco, CancellationToken token)
