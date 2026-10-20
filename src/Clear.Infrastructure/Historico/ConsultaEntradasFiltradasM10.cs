@@ -55,12 +55,12 @@ public static class ConsultaEntradasFiltradasM10
             json_array_length(e.categorias_json) = 0 AND e.acima_limite_pessoal = 0
             AND e.caminho NOT IN (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
             AND NOT EXISTS (SELECT 1 FROM json_each(e.verificacoes_json) AS v
-                WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada')))
+                WHERE json_extract(v.value, '$.Estado') IN ('IncompatibilidadeDocumentada', 'Alerta'))))
         AND ($com = 0 OR (
             json_array_length(e.categorias_json) > 0 OR e.acima_limite_pessoal = 1
             OR e.caminho IN (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
             OR EXISTS (SELECT 1 FROM json_each(e.verificacoes_json) AS v
-                WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada')))
+                WHERE json_extract(v.value, '$.Estado') IN ('IncompatibilidadeDocumentada', 'Alerta'))))
         """;
 
     public static async Task<(IReadOnlyList<EntradaHistoricaM6> Entradas, long Total)>
