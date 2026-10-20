@@ -74,7 +74,10 @@ public static class ServicoQuarentenaM7
         var nome = Path.GetFileName(origem);
         if (string.IsNullOrEmpty(nome))
             throw new IOException("Nome de arquivo inválido.");
-        var caminhoDestino = Path.Combine(destinoRaiz, id, nome);
+        // Cada operação é isolada por GUID, MAS mantém toda a estrutura
+        // relativa do acervo abaixo dessa pasta.
+        var relativo = Path.GetRelativePath(raiz, origem);
+        var caminhoDestino = Path.Combine(destinoRaiz, id, relativo);
         return new PlanoQuarentenaM7(id, execucao.Id, entrada.Id, raiz,
             origem, caminhoDestino, esperado, modificado.ToUniversalTime(), sha);
     }
@@ -88,14 +91,31 @@ public static class ServicoQuarentenaM7
         string bancoAuditoria, CancellationToken cancelamento = default)
     {
         ArgumentNullException.ThrowIfNull(plano);
+        if (!Guid.TryParseExact(plano.IdOperacao, "N", out _))
+            throw new IOException("ID da operação de quarentena inválido.");
         if (!confirmacaoHumanaExplicita)
             throw new OperationCanceledException("O usuário não confirmou a movimentação.");
         if (string.IsNullOrWhiteSpace(bancoAuditoria))
             throw new ArgumentException("Banco de auditoria obrigatório.", nameof(bancoAuditoria));
         cancelamento.ThrowIfCancellationRequested();
 
-        var raizDestino = Path.GetDirectoryName(Path.GetDirectoryName(plano.CaminhoDestino))
-            ?? throw new IOException("Destino inválido.");
+        // Recupera a pasta de operação pela hierarquia relativa planejada.
+        // Não confia em planos manipulados pelo chamador.
+        var relativo = Path.GetRelativePath(plano.RaizAnalisada, plano.CaminhoOriginal);
+        if (!EstaDentro(plano.CaminhoOriginal, plano.RaizAnalisada))
+            throw new IOException("Arquivo fora da raiz original.");
+        var pastaOperacao = plano.CaminhoDestino;
+        foreach (var _ in relativo.Split(Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar))
+            pastaOperacao = Path.GetDirectoryName(pastaOperacao)
+                ?? throw new IOException("Destino da quarentena inválido.");
+        if (!string.Equals(Path.GetFileName(pastaOperacao), plano.IdOperacao,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Path.GetFullPath(Path.Combine(pastaOperacao, relativo)),
+                Path.GetFullPath(plano.CaminhoDestino), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("O plano da quarentena não preserva o caminho relativo.");
+        var raizDestino = Path.GetDirectoryName(pastaOperacao)
+            ?? throw new IOException("Raiz da quarentena inválida.");
         var banco = Path.GetFullPath(bancoAuditoria);
         var pastaBanco = Path.GetDirectoryName(banco)
             ?? throw new IOException("Caminho SQLite inválido.");

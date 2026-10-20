@@ -141,18 +141,29 @@ public static class ServicoRestauracaoM8
             throw new IOException("Origem e destino não podem ser iguais.");
         if (plano.Sha256Hex.Length != 64 || !plano.Sha256Hex.All(Uri.IsHexDigit))
             throw new InvalidDataException("SHA-256 na auditoria está inválido.");
-        var pastaOperacao = Path.GetDirectoryName(fonte)
-            ?? throw new IOException("Caminho da quarentena inválido.");
-        var raizQuarentena = Path.GetDirectoryName(pastaOperacao)
-            ?? throw new IOException("Raiz da quarentena inválida.");
-        if (!Guid.TryParseExact(plano.IdOperacao, "N", out _)
-            || !string.Equals(Path.GetFileName(pastaOperacao),
-                plano.IdOperacao, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(Path.GetFileName(fonte),
-                Path.GetFileName(destino), StringComparison.OrdinalIgnoreCase)
-            || string.Equals(raizQuarentena, Path.GetDirectoryName(destino),
+        // Suporta registros legados M7: <raiz>/<GUID>/<nome> e registros
+        // novos: <raiz>/<GUID>/<caminho relativo completo da origem>.
+        var diretorio = new DirectoryInfo(Path.GetDirectoryName(fonte)
+            ?? throw new IOException("Caminho da quarentena inválido."));
+        if (!Guid.TryParseExact(plano.IdOperacao, "N", out _))
+            throw new IOException("Identificador de operação inválido.");
+        while (diretorio.Parent is not null &&
+            !string.Equals(diretorio.Name, plano.IdOperacao,
                 StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Os caminhos não correspondem à estrutura auditada do M7.");
+            diretorio = diretorio.Parent;
+        if (!string.Equals(diretorio.Name, plano.IdOperacao,
+                StringComparison.OrdinalIgnoreCase) || diretorio.Parent is null)
+            throw new IOException("Pasta da operação auditada não encontrada.");
+        var raizQuarentena = diretorio.Parent.FullName;
+        var relativo = Path.GetRelativePath(diretorio.FullName, fonte);
+        if (Path.IsPathRooted(relativo) || relativo is "." or ".." ||
+            relativo.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || !destino.EndsWith(Path.DirectorySeparatorChar + relativo,
+                StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Hierarquia da quarentena incompatível com a origem.");
+        if (string.Equals(raizQuarentena, Path.GetDirectoryName(destino),
+                StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Quarentena e origem não podem ser a mesma pasta.");
         if (!string.Equals(Path.GetPathRoot(fonte),
             Path.GetPathRoot(destino), StringComparison.OrdinalIgnoreCase))
             throw new IOException("Restauração entre volumes não é permitida.");
