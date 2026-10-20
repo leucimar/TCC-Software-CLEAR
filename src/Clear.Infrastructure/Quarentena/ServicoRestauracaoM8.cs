@@ -167,10 +167,10 @@ public static class ServicoRestauracaoM8
         if (!string.Equals(Path.GetPathRoot(fonte),
             Path.GetPathRoot(destino), StringComparison.OrdinalIgnoreCase))
             throw new IOException("Restauração entre volumes não é permitida.");
-        var relativo = Path.GetRelativePath(raizQuarentena, destino);
-        if (!Path.IsPathRooted(relativo)
-            && !string.Equals(relativo, "..", StringComparison.Ordinal)
-            && !relativo.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        var relativoAoDestino = Path.GetRelativePath(raizQuarentena, destino);
+        if (!Path.IsPathRooted(relativoAoDestino)
+            && !string.Equals(relativoAoDestino, "..", StringComparison.Ordinal)
+            && !relativoAoDestino.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             throw new IOException("Destino original não pode estar dentro da quarentena.");
 
         VerificarDiretorios(fonte);
