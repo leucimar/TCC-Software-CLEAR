@@ -280,12 +280,19 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             MessageBox.Show(this, "Não foi possível preparar a prévia: " + ex.Message);
             return;
         }
+        var caminhosDeExemplo = string.Join(Environment.NewLine,
+            entradas.Take(12).Select(e => "  • " + e.Caminho));
+        var avisoExcedentes = entradas.Count > 12
+            ? Environment.NewLine + $"... e mais {entradas.Count - 12:N0} arquivo(s) " +
+              "marcados em outras páginas/filtros." : "";
         var resposta = MessageBox.Show(this,
             $"CONFIRMAR A MOVIMENTAÇÃO PARA QUARENTENA DE {quantidade:N0} ARQUIVOS?" +
             Environment.NewLine + $"Total histórico: {tamanho:N0} bytes" +
             Environment.NewLine + $"Origem da análise: {_execucao.DiretorioRaiz}" +
             Environment.NewLine + $"Raiz da quarentena: {_destino}" +
             Environment.NewLine + "APENAS IDs INDIVIDUALMENTE SELECIONADOS." +
+            Environment.NewLine + "Caminhos incluídos (amostra):" +
+            Environment.NewLine + caminhosDeExemplo + avisoExcedentes +
             Environment.NewLine + Environment.NewLine +
             "Cada arquivo será revalidado pelo M7 (tamanho, data, SHA-256)." +
             Environment.NewLine +
