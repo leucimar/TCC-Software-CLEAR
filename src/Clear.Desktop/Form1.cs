@@ -945,7 +945,8 @@ public partial class Form1 : Form
                     filtro?.LimiteBytes,
                     usarSinalTemporal ? diasSelecionados : null,
                     usarSinalTemporal ? referenciaTemporalUtc : null,
-                    usarDuplicatas);
+                    usarDuplicatas,
+                    usarSinalTemporal ? "UltimoAcessoUtc" : null);
 
                 historico = await SessaoHistoricoSqliteM6.IniciarAsync(
                     pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);
