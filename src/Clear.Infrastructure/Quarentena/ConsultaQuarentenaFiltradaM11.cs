@@ -35,10 +35,12 @@ public static class ConsultaQuarentenaFiltradaM11
         var total = Convert.ToInt64(await count.ExecuteScalarAsync(ct).ConfigureAwait(false),
             CultureInfo.InvariantCulture);
         await using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem
-            FROM movimentacoes WHERE
-            """ + Condicoes + " ORDER BY original, id LIMIT $lim OFFSET $offset";
+        // A interpolação do literal SQL anterior juntava WHERE + execucao_id
+        // sem espaço (WHEREexecucao_id), causando SQLite Error 1 near '='.
+        cmd.CommandText =
+            "SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem " +
+            "FROM movimentacoes WHERE " + Condicoes +
+            " ORDER BY original, id LIMIT $lim OFFSET $offset";
         Parametros(cmd, execucao, filtro);
         cmd.Parameters.AddWithValue("$lim", TamanhoPagina);
         cmd.Parameters.AddWithValue("$offset", checked((long)pagina * TamanhoPagina));

@@ -62,6 +62,33 @@ public sealed class FluxoQuarentenaCompartilhadaM11Tests
     }
 
     [TestMethod]
+    public async Task ConsultaSemFiltroListaRegistrosEASelecaoExplicitamenteMarcada()
+    {
+        using var c = new Cenario();
+        var a = await c.EnviarAsync("Relatorios/relatorio1.pdf");
+        var b = await c.EnviarAsync("Planilhas/planilha1.xlsx");
+        var (primeiraPagina, total) = await ConsultaQuarentenaFiltradaM11.ConsultarAsync(
+            c.Banco, c.Execucao.Id, new FiltroRestauracaoM11(), 0);
+        Assert.AreEqual(2L, total);
+        Assert.HasCount(2, primeiraPagina);
+        var (paginaVazia, mesmoTotal) = await ConsultaQuarentenaFiltradaM11.ConsultarAsync(
+            c.Banco, c.Execucao.Id, new FiltroRestauracaoM11(), 1);
+        Assert.AreEqual(2L, mesmoTotal);
+        Assert.HasCount(0, paginaVazia);
+        var todos = await ConsultaQuarentenaFiltradaM11.SelecionarTodosFiltradosAsync(
+            c.Banco, c.Execucao.Id, new FiltroRestauracaoM11());
+        Assert.HasCount(2, todos);
+        CollectionAssert.AreEquivalent(new[] { a.IdOperacao, b.IdOperacao }, todos.ToArray());
+        var apenasUm = await ConsultaQuarentenaFiltradaM11.ConsultarSelecionadosAsync(
+            c.Banco, c.Execucao.Id, [b.IdOperacao]);
+        Assert.HasCount(1, apenasUm);
+        Assert.AreEqual(b.IdOperacao, apenasUm[0].IdOperacao);
+        // Consultas e seleções não devem movimentar arquivos.
+        Assert.IsTrue(File.Exists(a.CaminhoDestino));
+        Assert.IsTrue(File.Exists(b.CaminhoDestino));
+    }
+
+    [TestMethod]
     public async Task NegacaoDeLimpezaNaoExcluiPastasNemArquivos()
     {
         using var c = new Cenario();
@@ -109,6 +136,13 @@ public sealed class FluxoQuarentenaCompartilhadaM11Tests
             cmd.Parameters.AddWithValue("$sha", sha);
             await cmd.ExecuteNonQueryAsync();
         }
+        // Banco v1 ainda deve permitir localizar arquivos para restauração
+        // em lote; a consulta é somente leitura e não altera o esquema.
+        var (legados, totalLegados) = await ConsultaQuarentenaFiltradaM11.ConsultarAsync(
+            c.Banco, "analise-antiga", new FiltroRestauracaoM11(Extensao: ".pdf"), 0);
+        Assert.AreEqual(1L, totalLegados);
+        Assert.HasCount(1, legados);
+        Assert.AreEqual(id, legados[0].IdOperacao);
         var plano = await ServicoRestauracaoM8.PrepararAsync(id, c.Banco);
         Assert.AreEqual("Legado", plano.Estrutura);
         await ServicoRestauracaoM8.RestaurarAsync(plano, true, c.Banco);
