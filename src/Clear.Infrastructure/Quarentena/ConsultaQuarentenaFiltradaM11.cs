@@ -65,10 +65,12 @@ public static class ConsultaQuarentenaFiltradaM11
         Validar(execucao, filtro);
         await using var db = await AbrirAsync(banco, ct).ConfigureAwait(false);
         await using var cmd = db.CreateCommand();
+        // $max pertence ao filtro de TAMANHO. O limite do lote precisa
+        // de outro nome para não criar parâmetros SQL duplicados.
         cmd.CommandText = "SELECT id FROM movimentacoes WHERE " + Condicoes +
-            " ORDER BY original, id LIMIT $max";
+            " ORDER BY original, id LIMIT $limiteLote";
         Parametros(cmd, execucao, filtro);
-        cmd.Parameters.AddWithValue("$max", MaximoLote + 1);
+        cmd.Parameters.AddWithValue("$limiteLote", MaximoLote + 1);
         var ids = new List<string>();
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))

@@ -89,6 +89,27 @@ public sealed class FluxoQuarentenaCompartilhadaM11Tests
     }
 
     [TestMethod]
+    public async Task SelecionarTodosFiltradosDistingueLimiteDeLoteDoTamanhoMaximo()
+    {
+        using var c = new Cenario();
+        var a = await c.EnviarAsync("Pdfs/primeiro.pdf");
+        await c.EnviarAsync("Pdfs/segundo.pdf");
+
+        // Os arquivos sintéticos têm 3 bytes; o limite de lote de 10.001
+        // não pode sobrescrever o filtro MaximoBytes.
+        var inclusivos = await ConsultaQuarentenaFiltradaM11.SelecionarTodosFiltradosAsync(
+            c.Banco, c.Execucao.Id,
+            new FiltroRestauracaoM11(Extensao: ".pdf", MinimoBytes: 3, MaximoBytes: 3));
+        Assert.HasCount(2, inclusivos);
+        CollectionAssert.Contains(inclusivos.ToArray(), a.IdOperacao);
+
+        var nenhum = await ConsultaQuarentenaFiltradaM11.SelecionarTodosFiltradosAsync(
+            c.Banco, c.Execucao.Id,
+            new FiltroRestauracaoM11(Extensao: ".pdf", MaximoBytes: 2));
+        Assert.HasCount(0, nenhum);
+    }
+
+    [TestMethod]
     public async Task NegacaoDeLimpezaNaoExcluiPastasNemArquivos()
     {
         using var c = new Cenario();
