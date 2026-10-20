@@ -140,7 +140,11 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _grade.CellValueChanged += (_, e) =>
         {
             if (_carregando || e.RowIndex < 0 || e.ColumnIndex != 0) return;
-            var id = (long)_grade.Rows[e.RowIndex].Cells["Id"].Value;
+            if (_grade.Rows[e.RowIndex].Cells["Id"].Value is not long id)
+            {
+                _estado.Text = "Identificador do arquivo inválido; seleção não modificada.";
+                return;
+            }
             if (_grade.Rows[e.RowIndex].Cells["Marcado"].Value is true)
                 _selecionados.Add(id);
             else
@@ -237,7 +241,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             foreach (var e in _paginaAtual)
             {
                 _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
-                    e.TamanhoBytes ?? 0, e.CategoriasJson, e.ModificadoUtc, e.Id);
+                    e.TamanhoBytes ?? 0, e.CategoriasJson,
+                    e.ModificadoUtc ?? string.Empty, e.Id);
             }
         }
         finally { _carregando = false; }

@@ -22,7 +22,7 @@ public sealed class EstimativaRestanteM10Tests
         Assert.IsNotNull(eta);
         // 3% dos arquivos, mas 40% dos bytes: ETA não confunde
         // 3% de arquivos com somente 3% do trabalho realizado.
-        Assert.IsLessThan(eta.Value.TotalMinutes, 3.0);
+        Assert.IsLessThan(3.0, eta.Value.TotalMinutes);
     }
 
     [TestMethod]
