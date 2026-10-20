@@ -138,6 +138,12 @@ public sealed class FormRestauracaoLoteM11 : Form
         _proxima.Click += async (_, _) => await CarregarAsync(_pagina + 1);
         _selecionarPagina.Click += (_, _) =>
         {
+            if (_ids.Concat(_paginaAtual.Select(x => x.IdOperacao))
+                    .Distinct(StringComparer.Ordinal).Take(10001).Count() > 10000)
+            {
+                MessageBox.Show(this, "O lote não pode exceder 10.000 arquivos.");
+                return;
+            }
             foreach (var item in _paginaAtual) _ids.Add(item.IdOperacao);
             AtualizarTabela();
             ExibirEstado();
@@ -157,6 +163,10 @@ public sealed class FormRestauracaoLoteM11 : Form
             {
                 var encontrados = await ConsultaQuarentenaFiltradaM11
                     .SelecionarTodosFiltradosAsync(_banco, _idExecucao, _filtro);
+                if (_ids.Concat(encontrados).Distinct(StringComparer.Ordinal)
+                        .Take(10001).Count() > 10000)
+                    throw new InvalidOperationException(
+                        "Seleção acumulada excede 10.000 arquivos. Limpe a seleção ou refine filtros.");
                 foreach (var id in encontrados) _ids.Add(id);
                 AtualizarTabela();
                 ExibirEstado();
