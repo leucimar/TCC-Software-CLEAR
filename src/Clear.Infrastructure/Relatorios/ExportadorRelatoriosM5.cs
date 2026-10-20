@@ -31,7 +31,7 @@ public sealed record RelatoriosGerados(
 public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDisposable
 {
     private const string CabecalhoInventario =
-        "Tipo;Nome;Caminho;TamanhoBytes;UltimaModificacaoUtc;CategoriasGerais;" +
+        "Tipo;Nome;Caminho;TamanhoBytes;UltimaModificacaoUtc;UltimoAcessoUtc;CategoriasGerais;" +
         "EvidenciasGerais;EstadosDasRegras;JustificativasCompatibilidade;AcimaLimitePessoal";
     private const string CabecalhoDuplicatas =
         "Grupo;Caminho;TamanhoBytes;SHA256;BytesPotencialmenteRedundantesGrupo";
@@ -150,6 +150,7 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             entrada.CaminhoCompleto,
             entrada.TamanhoBytes?.ToString(CultureInfo.InvariantCulture) ?? "",
             entrada.Arquivo?.UltimaModificacaoUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
+            entrada.Arquivo?.UltimoAcessoUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
             string.Join(" | ", classificacaoGeral?.Categorias.Select(x => x.ToString())
                 ?? Enumerable.Empty<string>()),
             string.Join(" | ", classificacaoGeral?.Evidencias.Select(x => x.Justificativa)
@@ -222,6 +223,7 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
                 FiltroLinhas = _filtro.ToString(),
                 FiltrosGeraisAtivos = filtrosGeraisAtivos.ToArray(),
                 DiasTemporais = diasTemporais,
+                CriterioTemporal = "UltimoAcessoUtc (metadado não garantido pelo sistema operacional)",
                 ReferenciaTemporalUtc = referenciaTemporalUtc,
                 LinhasExportadas = _linhasExportadas,
                 Aviso = "Resultados de pre-analise. Nao autoriza descarte nem garante migracao.",
