@@ -31,7 +31,7 @@ public sealed record RelatoriosGerados(
 public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDisposable
 {
     private const string CabecalhoInventario =
-        "Tipo;Nome;Caminho;TamanhoBytes;UltimaModificacaoUtc;UltimoAcessoUtc;CategoriasGerais;" +
+        "Tipo;Nome;Caminho;TamanhoBytes;UltimaModificacaoUtc;UltimoAcessoUtc;CategoriasGerais;SituacaoPreAnalise;" +
         "EvidenciasGerais;EstadosDasRegras;JustificativasCompatibilidade;AcimaLimitePessoal";
     private const string CabecalhoDuplicatas =
         "Grupo;Caminho;TamanhoBytes;SHA256;BytesPotencialmenteRedundantesGrupo";
@@ -153,6 +153,8 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             entrada.Arquivo?.UltimoAcessoUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
             string.Join(" | ", classificacaoGeral?.Categorias.Select(x => x.ToString())
                 ?? Enumerable.Empty<string>()),
+            temIndicios || temIncompatibilidade || excede ?
+                "Com indicios/alertas" : "Sem alertas detectados (nao significa aprovado)",
             string.Join(" | ", classificacaoGeral?.Evidencias.Select(x => x.Justificativa)
                 ?? Enumerable.Empty<string>()),
             string.Join(" | ", estados),
