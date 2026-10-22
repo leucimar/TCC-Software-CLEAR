@@ -67,7 +67,7 @@ public sealed class InventarioTemporalTests
         resultado.ContagensCategoria.Single(item => item.Categoria == categoria).QuantidadeArquivos;
 
     private static ArquivoInventariado Arquivo(string nome, long bytes, int dias) =>
-        new(@"C:\Teste\" + nome, bytes, Referencia.AddDays(dias));
+        new(@"C:\Teste\" + nome, bytes, Referencia.AddDays(dias), Referencia.AddDays(dias));
 
     private sealed class FonteFalsa(params ArquivoInventariado[] arquivos) : IFonteInventario
     {

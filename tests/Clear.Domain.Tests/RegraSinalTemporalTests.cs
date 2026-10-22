@@ -46,20 +46,20 @@ public sealed class RegraSinalTemporalTests
     }
 
     [TestMethod]
-    public void SemDataDeModificacaoNaoConcluiAntiguidade()
+    public void SemDataDeAcessoNaoConcluiAntiguidade()
     {
         var arquivo = new ArquivoInventariado(@"C:\Teste\semData.txt", 2);
         Assert.IsNull(new RegraSinalTemporal(365, Referencia).Avaliar(arquivo));
     }
 
     [TestMethod]
-    public void IgnoraDataDeAcessoAntigaQuandoModificacaoEhRecente()
+    public void AcessoAntigoComModificacaoRecenteEhIndicio()
     {
         var arquivo = new ArquivoInventariado(@"C:\Teste\arquivo.txt", 2,
             ultimaModificacaoUtc: Referencia.AddDays(-2),
             ultimoAcessoUtc: Referencia.AddDays(-1000));
 
-        Assert.IsNull(new RegraSinalTemporal(365, Referencia).Avaliar(arquivo));
+        Assert.IsNotNull(new RegraSinalTemporal(365, Referencia).Avaliar(arquivo));
     }
 
     [TestMethod]
@@ -83,8 +83,8 @@ public sealed class RegraSinalTemporalTests
     [TestMethod]
     public void AceitaLimiaresNosExtremosPermitidos()
     {
-        Assert.AreEqual(1, new RegraSinalTemporal(1, Referencia).DiasSemModificacao);
-        Assert.AreEqual(3650, new RegraSinalTemporal(3650, Referencia).DiasSemModificacao);
+        Assert.AreEqual(1, new RegraSinalTemporal(1, Referencia).DiasSemAcesso);
+        Assert.AreEqual(3650, new RegraSinalTemporal(3650, Referencia).DiasSemAcesso);
     }
 
     [TestMethod]
@@ -92,7 +92,8 @@ public sealed class RegraSinalTemporalTests
     {
         var classificador = ClassificadorArquivos.CriarComSinalTemporal(365, Referencia);
         var resultado = classificador.Classificar(
-            new ArquivoInventariado(@"C:\Teste\vazio.bak", 0, Referencia.AddDays(-500)));
+            new ArquivoInventariado(@"C:\Teste\vazio.bak", 0,
+                Referencia.AddDays(-500), Referencia.AddDays(-500)));
 
         Assert.HasCount(3, resultado.Categorias);
         Assert.HasCount(3, resultado.Evidencias);
@@ -105,11 +106,28 @@ public sealed class RegraSinalTemporalTests
     public void ClassificadorPadraoNaoAtivaRegraTemporalImplicitamente()
     {
         var resultado = new ClassificadorArquivos().Classificar(
-            new ArquivoInventariado(@"C:\Teste\antigo.txt", 5, Referencia.AddDays(-900)));
+            new ArquivoInventariado(@"C:\Teste\antigo.txt", 5,
+                Referencia.AddDays(-900), Referencia.AddDays(-900)));
 
         Assert.HasCount(0, resultado.Categorias);
     }
 
+    [TestMethod]
+    public void AcessoRecenteEvitaIndicioMesmoComModificacaoAntiga()
+    {
+        var arquivo = new ArquivoInventariado(@"C:\Teste\emUso.txt", 7,
+            Referencia.AddDays(-700), Referencia.AddDays(-1));
+        Assert.IsNull(new RegraSinalTemporal(365, Referencia).Avaliar(arquivo));
+    }
+
+    [TestMethod]
+    public void SemAcessoMesmoComModificacaoAntigaNaoRecebeIndicio()
+    {
+        var arquivo = new ArquivoInventariado(@"C:\Teste\semAcesso.txt", 7,
+            Referencia.AddDays(-700));
+        Assert.IsNull(new RegraSinalTemporal(365, Referencia).Avaliar(arquivo));
+    }
+
     private static ArquivoInventariado Arquivo(DateTimeOffset data) =>
-        new(@"C:\Teste\relatorio.txt", 123, data);
+        new(@"C:\Teste\relatorio.txt", 123, data, data);
 }

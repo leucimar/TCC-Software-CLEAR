@@ -7,7 +7,7 @@ public sealed record EntradaHistoricaM6(
     long Id, string Tipo, string Caminho, long? TamanhoBytes,
     string? ModificadoUtc, string CategoriasJson, string EvidenciasJson,
     string VerificacoesJson, bool AcimaDoLimitePessoal,
-    bool EhDuplicataExata = false);
+    bool EhDuplicataExata = false, string? AcessadoUtc = null);
 
 public sealed record MembroDuplicataHistoricaM6(
     long Grupo, long TamanhoBytes, string Sha256,
@@ -35,7 +35,7 @@ public static class ConsultaHistoricoSqliteM6
         comando.CommandText = """
             SELECT id, tipo, caminho, tamanho_bytes, modificado_utc,
                    categorias_json, evidencias_json, verificacoes_json,
-                   acima_limite_pessoal
+                   acima_limite_pessoal, acessado_utc
             FROM entradas WHERE execucao_id = $id
             ORDER BY id LIMIT $limite OFFSET $offset;
             """;
@@ -52,7 +52,8 @@ public static class ConsultaHistoricoSqliteM6
                 leitor.IsDBNull(3) ? null : leitor.GetInt64(3),
                 leitor.IsDBNull(4) ? null : leitor.GetString(4),
                 leitor.GetString(5), leitor.GetString(6), leitor.GetString(7),
-                leitor.GetInt64(8) == 1));
+                leitor.GetInt64(8) == 1, false,
+                leitor.IsDBNull(9) ? null : leitor.GetString(9)));
         }
         return result.AsReadOnly();
     }

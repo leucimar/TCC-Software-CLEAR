@@ -17,8 +17,8 @@ public sealed class ConsultaEntradasFiltradasM10Tests
         var filtro = new FiltrosEntradasM10(
             Categoria: "CopiaBackupOuTemporario",
             Extensao: ".bak", MinimoBytes: 5, MaximoBytes: 50,
-            ModificadoDesde: new DateOnly(2025, 1, 1),
-            ModificadoAte: new DateOnly(2025, 12, 31));
+            AcessadoDesde: new DateOnly(2025, 1, 1),
+            AcessadoAte: new DateOnly(2025, 12, 31));
         var (dados, total) = await ConsultaEntradasFiltradasM10.ConsultarAsync(
             c.Banco, id, filtro, 0);
         Assert.AreEqual(1L, total);
@@ -127,6 +127,39 @@ public sealed class ConsultaEntradasFiltradasM10Tests
                 c.Banco, "id", new FiltrosEntradasM10(), -1));
     }
 
+    [TestMethod]
+    public async Task SelecaoGlobalUltrapassaDuasPaginasEExcluiCaminhosIndisponiveis()
+    {
+        using var c = new Cenario();
+        var id = await c.CriarHistoricoAsync(adicionais: 240);
+        var indisponivel = Path.Combine(c.Origem, "extra000.txt");
+        var bloqueados = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { indisponivel };
+
+        var ids = await ConsultaEntradasFiltradasM10.SelecionarTodosFiltradosAsync(
+            c.Banco, id, new FiltrosEntradasM10(), bloqueados);
+
+        Assert.HasCount(243, ids);
+        Assert.HasCount(243, ids.Distinct().ToArray());
+        var entradas = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(
+            c.Banco, id, ids);
+        Assert.IsFalse(entradas.Any(x => x.Caminho == indisponivel));
+    }
+
+    [TestMethod]
+    public async Task SemAlertasNaoSignificaAprovacaoEExcluiIndiciosClassificados()
+    {
+        using var c = new Cenario();
+        var id = await c.CriarHistoricoAsync();
+        var sem = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            c.Banco, id, new FiltrosEntradasM10(ApenasSemAlertas: true), 0);
+        var com = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            c.Banco, id, new FiltrosEntradasM10(ApenasComAlertas: true), 0);
+        Assert.AreEqual(1L, sem.Total);
+        Assert.AreEqual(3L, com.Total);
+        StringAssert.EndsWith(sem.Entradas.Single().Caminho, "tabela.csv");
+    }
+
     private sealed class Cenario : IDisposable
     {
         private readonly string _base = Path.Combine(Path.GetTempPath(),
@@ -140,16 +173,19 @@ public sealed class ConsultaEntradasFiltradasM10Tests
             Banco = Path.Combine(_base, "Saida", "historico.sqlite3");
         }
 
-        public async Task<string> CriarHistoricoAsync()
+        public async Task<string> CriarHistoricoAsync(int adicionais = 0)
         {
             var data = new DateTimeOffset(2025, 4, 15, 0, 0, 0, TimeSpan.Zero);
             var entradas = new[]
             {
-                new ArquivoInventariado(Path.Combine(Origem, "relatorio.bak"), 20, data),
-                new ArquivoInventariado(Path.Combine(Origem, "outro.bak"), 100, data),
-                new ArquivoInventariado(Path.Combine(Origem, "arquivo.pdf"), 0, data),
-                new ArquivoInventariado(Path.Combine(Origem, "tabela.csv"), 32, data)
-            }.Select(EntradaInventariada.DeArquivo).ToArray();
+                new ArquivoInventariado(Path.Combine(Origem, "relatorio.bak"), 20, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "outro.bak"), 100, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "arquivo.pdf"), 0, data, data),
+                new ArquivoInventariado(Path.Combine(Origem, "tabela.csv"), 32, data, data)
+            }.Concat(Enumerable.Range(0, adicionais)
+                .Select(i => new ArquivoInventariado(
+                    Path.Combine(Origem, $"extra{i:000}.txt"), 10, data, data)))
+                .Select(EntradaInventariada.DeArquivo).ToArray();
             await using var sessao = await SessaoHistoricoSqliteM6.IniciarAsync(
                 Origem, Banco, ParametrosHistoricoM6.SemFiltros);
             var resumo = await new InventariarDiretorio(new Fonte(entradas),

@@ -154,7 +154,7 @@ public partial class Form1 : Form
     private readonly CheckBox _identificarTemporarios = new()
         { Text = "Identificar nomes de backups e temporários", AutoSize = true, Checked = true };
     private readonly CheckBox _ativarSinalTemporal = new()
-        { Text = "Última modificação há mais de", AutoSize = true };
+        { Text = "Último acesso registrado há mais de", AutoSize = true };
     private readonly NumericUpDown _dias = new()
         { Minimum = 30, Maximum = 3650, Value = 365, Width = 72, Enabled = false };
     private readonly CheckBox _ativarTamanho = new()
@@ -945,7 +945,8 @@ public partial class Form1 : Form
                     filtro?.LimiteBytes,
                     usarSinalTemporal ? diasSelecionados : null,
                     usarSinalTemporal ? referenciaTemporalUtc : null,
-                    usarDuplicatas);
+                    usarDuplicatas,
+                    usarSinalTemporal ? "UltimoAcessoUtc" : null);
 
                 historico = await SessaoHistoricoSqliteM6.IniciarAsync(
                     pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);
@@ -979,13 +980,20 @@ public partial class Form1 : Form
                     Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
                     Caminho = item.Entrada.CaminhoCompleto,
                     Bytes = item.Entrada.TamanhoBytes,
-                    IndiciosGerais = gerais,
+                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
                     Compatibilidade = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Estado)),
                     Justificativas = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Justificativa)),
                     FiltroPersonalizado = item.AcimaDoLimitePersonalizado
                         ? "Acima do limite pessoal" : "",
+                    SituacaoPreAnalise = arquivo is null ? "Pasta (não aplicável)" :
+                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
+                        !relevantes.Any(x => x.Estado is
+                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
+                            ? "Sem alertas detectados (não significa aprovado)"
+                            : "Com indícios ou alertas",
+                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
                     ModificadoUtc = arquivo?.UltimaModificacaoUtc
                 };
             }).ToList();
@@ -1016,7 +1024,7 @@ public partial class Form1 : Form
                       $"{resultado.AvaliacoesNaoAvaliadas:N0} não avaliadas.";
 
             _estado.Text = $"{textoPerfil} | {estado} " +
-                (usarSinalTemporal ? $"Sinal temporal: {diasSelecionados} dias. " : "") +
+                (usarSinalTemporal ? $"Sinal temporal por ÚLTIMO ACESSO (metadado Windows): {diasSelecionados} dias. " : "") +
                 "Nenhum arquivo alterado.";
             _dicas.SetToolTip(_estado, _estado.Text);
 

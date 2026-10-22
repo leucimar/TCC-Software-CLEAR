@@ -45,7 +45,7 @@ public sealed class FormRestauracaoLoteM11 : Form
         Dock = DockStyle.Fill, AllowUserToAddRows = false,
         AllowUserToDeleteRows = false, MultiSelect = false, RowHeadersVisible = false,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
     };
     private readonly HashSet<string> _ids = new(StringComparer.Ordinal);
     private List<RegistroQuarentenaM7> _paginaAtual = [];
@@ -61,7 +61,7 @@ public sealed class FormRestauracaoLoteM11 : Form
         _idExecucao = idExecucao;
         _banco = banco;
         Text = "CLEAR — Restaurar arquivos em lote (CONFIRMAÇÃO OBRIGATÓRIA)";
-        Size = new Size(1390, 830);
+        Size = new Size(1450, 840);
         MinimumSize = new Size(1050, 640);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill,
@@ -92,6 +92,12 @@ public sealed class FormRestauracaoLoteM11 : Form
         _grade.Columns.Add("Destino", "Caminho na quarentena");
         _grade.Columns.Add("Tamanho", "Bytes");
         _grade.Columns.Add("Id", "ID da operação");
+        _grade.Columns["Id"]!.Visible = false;
+        _grade.Columns["Marcar"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _grade.Columns["Marcar"]!.Width = 85;
+        _grade.Columns["Original"]!.FillWeight = 60;
+        _grade.Columns["Destino"]!.FillWeight = 35;
+        _grade.Columns["Tamanho"]!.FillWeight = 12;
         for (var i = 1; i < _grade.Columns.Count; i++)
             _grade.Columns[i].ReadOnly = true;
         layout.Controls.Add(_grade, 0, 2);
@@ -132,6 +138,12 @@ public sealed class FormRestauracaoLoteM11 : Form
         _proxima.Click += async (_, _) => await CarregarAsync(_pagina + 1);
         _selecionarPagina.Click += (_, _) =>
         {
+            if (_ids.Concat(_paginaAtual.Select(x => x.IdOperacao))
+                    .Distinct(StringComparer.Ordinal).Take(10001).Count() > 10000)
+            {
+                MessageBox.Show(this, "O lote não pode exceder 10.000 arquivos.");
+                return;
+            }
             foreach (var item in _paginaAtual) _ids.Add(item.IdOperacao);
             AtualizarTabela();
             ExibirEstado();
@@ -151,6 +163,10 @@ public sealed class FormRestauracaoLoteM11 : Form
             {
                 var encontrados = await ConsultaQuarentenaFiltradaM11
                     .SelecionarTodosFiltradosAsync(_banco, _idExecucao, _filtro);
+                if (_ids.Concat(encontrados).Distinct(StringComparer.Ordinal)
+                        .Take(10001).Count() > 10000)
+                    throw new InvalidOperationException(
+                        "Seleção acumulada excede 10.000 arquivos. Limpe a seleção ou refine filtros.");
                 foreach (var id in encontrados) _ids.Add(id);
                 AtualizarTabela();
                 ExibirEstado();
@@ -196,7 +212,15 @@ public sealed class FormRestauracaoLoteM11 : Form
         {
             var resultado = await ConsultaQuarentenaFiltradaM11.ConsultarAsync(
                 _banco, _idExecucao, _filtro, pagina);
-            if (pagina > 0 && resultado.Registros.Count == 0) return;
+            if (pagina > 0 && resultado.Registros.Count == 0)
+            {
+                // Após restauro, a última página pode deixar de existir.
+                // Retornar à última página válida, sem mostrar seleção obsoleta.
+                pagina = (int)Math.Max(0, (resultado.Total - 1) /
+                    ConsultaQuarentenaFiltradaM11.TamanhoPagina);
+                resultado = await ConsultaQuarentenaFiltradaM11.ConsultarAsync(
+                    _banco, _idExecucao, _filtro, pagina);
+            }
             _pagina = pagina;
             _total = resultado.Total;
             _paginaAtual = resultado.Registros.ToList();
@@ -224,9 +248,9 @@ public sealed class FormRestauracaoLoteM11 : Form
     }
 
     private void ExibirEstado() =>
-        _estado.Text = $"Elegíveis: {_total:N0} | Página {_pagina + 1}" +
-            $" | Marcados explicitamente: {_ids.Count:N0}. " +
-            "Somente EmQuarentena. Seleção permanece entre páginas e filtros.";
+        _estado.Text = $"Elegíveis para restauração: {_total:N0} | Página {_pagina + 1}" +
+            $" | Marcados: {_ids.Count:N0}. " +
+            "Itens restaurados somem da lista; o registro permanece na auditoria.";
 
     private void HabilitarExecucao(bool ativo)
     {

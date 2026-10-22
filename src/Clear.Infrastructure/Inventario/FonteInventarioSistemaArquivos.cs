@@ -129,7 +129,8 @@ public sealed class FonteInventarioSistemaArquivos :
                                     info.FullName,
                                     info.Length,
                                     new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero),
-                                    new DateTimeOffset(info.LastAccessTimeUtc, TimeSpan.Zero));
+                                    info.LastAccessTimeUtc.Year <= 1601 ? null :
+                                        new DateTimeOffset(info.LastAccessTimeUtc, TimeSpan.Zero));
                                 item = EntradaInventariada.DeArquivo(arquivo);
                             }
                         }

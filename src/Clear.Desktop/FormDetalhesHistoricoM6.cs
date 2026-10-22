@@ -435,6 +435,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
             $"Caminho: {item.Caminho}" + Environment.NewLine +
             $"Tipo: {item.Tipo} | Tamanho: {item.TamanhoBytes?.ToString() ?? "N/D"} bytes" +
             Environment.NewLine + $"Modificado em UTC: {item.ModificadoUtc}" +
+            Environment.NewLine + $"Último acesso registrado UTC: {item.AcessadoUtc ?? "Indisponível"}" +
             Environment.NewLine + $"Acima do limite pessoal: {(item.AcimaDoLimitePessoal ? "Sim" : "Não")}" +
             Environment.NewLine + Environment.NewLine +
             "CATEGORIAS" + Environment.NewLine + FormatJson(item.CategoriasJson) +

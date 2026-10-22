@@ -21,8 +21,12 @@ public sealed class InventarioTemporalIntegracaoTests
             await File.WriteAllBytesAsync(recente, new byte[] { 4, 5 });
             var referencia = DateTimeOffset.UtcNow;
             File.SetLastWriteTimeUtc(antigo, referencia.AddDays(-500).UtcDateTime);
+            File.SetLastAccessTimeUtc(antigo, referencia.AddDays(-500).UtcDateTime);
+            File.SetLastAccessTimeUtc(recente, referencia.AddDays(-2).UtcDateTime);
 
             var conteudoAntes = await File.ReadAllBytesAsync(antigo);
+            // A leitura acima pode alterar LastAccessTime; restaurar o cenário.
+            File.SetLastAccessTimeUtc(antigo, referencia.AddDays(-500).UtcDateTime);
             var modificacaoAntes = File.GetLastWriteTimeUtc(antigo);
             var classificador = ClassificadorArquivos.CriarComSinalTemporal(365, referencia);
 
