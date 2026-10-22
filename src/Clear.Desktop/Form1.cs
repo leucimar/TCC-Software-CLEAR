@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Clear.Application.Inventario;
+using Clear.Application.Progresso;
 using Clear.Application.Compatibilidade;
 using Clear.Application.Duplicatas;
 using Clear.Domain.Analise;
@@ -21,6 +22,19 @@ public partial class Form1 : Form
 {
     private readonly TextBox _caminho = new() { Dock = DockStyle.Fill, ReadOnly = true };
     private readonly Button _selecionar = new() { Text = "Escolher pasta", Dock = DockStyle.Fill };
+    private readonly TextBox _pastaQuarentena = new()
+        { Width = 370, ReadOnly = true,
+          Text = Path.Combine(Environment.GetFolderPath(
+              Environment.SpecialFolder.LocalApplicationData), "CLEAR", "Quarentena") };
+    private readonly TextBox _pastaRelatorios = new()
+        { Width = 370, ReadOnly = true,
+          Text = Path.Combine(Environment.GetFolderPath(
+              Environment.SpecialFolder.LocalApplicationData), "CLEAR", "Relatorios") };
+    private readonly Button _escolherQuarentena = new()
+        { Text = "Escolher quarentena", AutoSize = true };
+    private readonly Button _escolherRelatorios = new()
+        { Text = "Escolher relatórios", AutoSize = true };
+    private bool _quarentenaManual;
     private readonly Button _iniciar = new() { Text = "Analisar (somente leitura)", Dock = DockStyle.Fill };
     private readonly Button _cancelar = new() { Text = "Cancelar", Dock = DockStyle.Fill, Enabled = false };
     private readonly Button _criarSubBase = new()
@@ -140,7 +154,7 @@ public partial class Form1 : Form
     private readonly CheckBox _identificarTemporarios = new()
         { Text = "Identificar nomes de backups e temporários", AutoSize = true, Checked = true };
     private readonly CheckBox _ativarSinalTemporal = new()
-        { Text = "Última modificação há mais de", AutoSize = true };
+        { Text = "Último acesso registrado há mais de", AutoSize = true };
     private readonly NumericUpDown _dias = new()
         { Minimum = 30, Maximum = 3650, Value = 365, Width = 72, Enabled = false };
     private readonly CheckBox _ativarTamanho = new()
@@ -172,7 +186,7 @@ public partial class Form1 : Form
             RowCount = 7,
             Padding = new Padding(12)
         };
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
+        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 233));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
@@ -180,13 +194,14 @@ public partial class Form1 : Form
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
 
-        var topo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2 };
+        var topo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3 };
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
         topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95));
         topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
+        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 63));
         var mensagem = new Label
         {
             Text = "Análise somente leitura. Duplicatas usam leitura de conteúdo; nada é movido, modificado ou excluído.",
@@ -198,6 +213,16 @@ public partial class Form1 : Form
         topo.Controls.Add(_selecionar, 1, 1);
         topo.Controls.Add(_iniciar, 2, 1);
         topo.Controls.Add(_cancelar, 3, 1);
+        var locais = new FlowLayoutPanel { Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+        locais.Controls.Add(new Label { Text = "Quarentena:", AutoSize = true });
+        locais.Controls.Add(_pastaQuarentena);
+        locais.Controls.Add(_escolherQuarentena);
+        locais.Controls.Add(new Label { Text = "Relatórios:", AutoSize = true });
+        locais.Controls.Add(_pastaRelatorios);
+        locais.Controls.Add(_escolherRelatorios);
+        topo.Controls.Add(locais, 0, 2);
+        topo.SetColumnSpan(locais, 4);
 
 
         // O ambiente escolhido é exclusivo. Os filtros continuam visíveis,
@@ -416,6 +441,15 @@ public partial class Form1 : Form
         _consultarDetalhesHistorico.Click += (_, _) => AbrirDetalhesHistorico();
         _gradeHistorico.CellDoubleClick += (_, _) => AbrirDetalhesHistorico();
         _selecionar.Click += (_, _) => SelecionarPasta();
+        _escolherQuarentena.Click += (_, _) =>
+        {
+            if (EscolherPastaDeSaida(_pastaQuarentena, "Selecione a pasta da quarentena. " +
+                    "Ela deve ficar FORA do acervo e no MESMO volume."))
+                _quarentenaManual = true;
+        };
+        _escolherRelatorios.Click += (_, _) =>
+            EscolherPastaDeSaida(_pastaRelatorios,
+                "Selecione a pasta para relatórios CSV/JSON, fora do acervo.");
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         _iniciar.Click += async (_, _) => await IniciarAnaliseAsync();
         _reiniciarInterrompida.Click += async (_, _) => await ReiniciarInterrompidaAsync();
@@ -505,6 +539,8 @@ public partial class Form1 : Form
         _salvarCheckpoint.Enabled = pronto;
         _reiniciarInterrompida.Enabled = pronto;
         _criarSubBase.Enabled = pronto;
+        _escolherQuarentena.Enabled = pronto;
+        _escolherRelatorios.Enabled = pronto;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
         _salvarHistorico.Enabled = pronto;
@@ -526,7 +562,8 @@ public partial class Form1 : Form
             return;
         }
         using var janela = new FormDetalhesHistoricoM6(
-            execucao, SessaoHistoricoSqliteM6.CaminhoPadrao);
+            execucao, SessaoHistoricoSqliteM6.CaminhoPadrao,
+            _pastaQuarentena.Text);
         janela.ShowDialog(this);
     }
 
@@ -573,7 +610,60 @@ public partial class Form1 : Form
             SelectedPath = Directory.Exists(_caminho.Text) ? _caminho.Text : PastaInicialDeSelecao
         };
         if (dialogo.ShowDialog(this) == DialogResult.OK)
+        {
             _caminho.Text = dialogo.SelectedPath;
+            if (!_quarentenaManual)
+                _pastaQuarentena.Text = SugerirQuarentena(dialogo.SelectedPath);
+        }
+    }
+
+    private static string SugerirQuarentena(string origem)
+    {
+        var normalizado = Path.TrimEndingDirectorySeparator(Path.GetFullPath(origem));
+        var pai = Path.GetDirectoryName(normalizado);
+        return Path.Combine(pai ?? Path.GetPathRoot(normalizado)!,
+            "CLEAR_Quarentena");
+    }
+
+    private bool EscolherPastaDeSaida(TextBox destino, string descricao)
+    {
+        using var dialogo = new FolderBrowserDialog
+        {
+            Description = descricao, UseDescriptionForTitle = true,
+            ShowNewFolderButton = true,
+            SelectedPath = Directory.Exists(destino.Text)
+                ? destino.Text : PastaInicialDeSelecao
+        };
+        if (dialogo.ShowDialog(this) != DialogResult.OK) return false;
+        destino.Text = dialogo.SelectedPath;
+        return true;
+    }
+
+    private static void ValidarDestinoSaida(string origem, string destino,
+        bool exigirMesmoVolume)
+    {
+        var raiz = Path.GetFullPath(origem);
+        if (string.IsNullOrWhiteSpace(destino) || !Path.IsPathFullyQualified(destino))
+            throw new IOException("Selecione uma pasta de saída absoluta.");
+        var saida = Path.GetFullPath(destino);
+        var relativo = Path.GetRelativePath(raiz, saida);
+        if (!Path.IsPathRooted(relativo) &&
+            relativo != ".." &&
+            !relativo.StartsWith(".." + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal))
+            throw new IOException("A pasta de saída não pode ficar dentro do acervo.");
+        // Não admitir a pasta da saída como ancestral da origem.
+        var inverso = Path.GetRelativePath(saida, raiz);
+        if (!Path.IsPathRooted(inverso) && inverso != ".." &&
+            !inverso.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new IOException("A saída não pode conter a origem.");
+        if (exigirMesmoVolume &&
+            !string.Equals(Path.GetPathRoot(raiz), Path.GetPathRoot(saida),
+                StringComparison.OrdinalIgnoreCase))
+            throw new IOException("A quarentena deve ficar no mesmo volume da origem.");
+        for (DirectoryInfo? item = new(saida); item is not null; item = item.Parent)
+            if (item.Exists && (item.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("A pasta de saída não pode conter links/junctions.");
     }
 
     private ConfiguracaoCompatibilidade CriarConfiguracaoDestino()
@@ -720,21 +810,15 @@ public partial class Form1 : Form
                 identificarTemporarios,
                 usarSinalTemporal ? diasSelecionados : null,
                 referenciaTemporalUtc);
+            ValidarDestinoSaida(pasta, _pastaQuarentena.Text,
+                exigirMesmoVolume: true);
             if (exportarRelatorio)
             {
-                using var pastaSaida = new FolderBrowserDialog
-                {
-                    Description = "Escolha uma pasta de saída FORA do acervo analisado. " +
-                                  "Os relatórios incluem caminhos e possíveis dados sensíveis.",
-                    UseDescriptionForTitle = true,
-                    ShowNewFolderButton = true,
-                    SelectedPath = PastaInicialDeSelecao
-                };
-                if (pastaSaida.ShowDialog(this) != DialogResult.OK)
-                    return;
-
+                ValidarDestinoSaida(pasta, _pastaRelatorios.Text,
+                    exigirMesmoVolume: false);
+                Directory.CreateDirectory(_pastaRelatorios.Text);
                 exportador = ExportadorRelatoriosM5.Iniciar(pasta,
-                    pastaSaida.SelectedPath,
+                    _pastaRelatorios.Text,
                     (FiltroLinhasRelatorio)_filtroRelatorio.SelectedIndex);
             }
         }
@@ -771,8 +855,20 @@ public partial class Form1 : Form
         TimeSpan duracaoDuplicatas = TimeSpan.Zero;
         _resumo.Text = "Inventariando metadados e aplicando verificações habilitadas...";
 
+        long totalArquivosPrevistos = 0;
+        var relogioInventario = Stopwatch.StartNew();
         var progressoUi = new Progress<ProgressoInventario>(p =>
-            _estado.Text = $"Lidos: {p.QuantidadeArquivos:N0} arquivo(s), {p.TotalBytes:N0} bytes.");
+        {
+            var previsao = EstimativaRestante.Calcular(
+                p.QuantidadeArquivos, totalArquivosPrevistos, 0, 0,
+                relogioInventario.Elapsed);
+            _estado.Text = $"Inventário/classificação: {p.QuantidadeArquivos:N0}" +
+                (totalArquivosPrevistos > 0 ? $"/{totalArquivosPrevistos:N0}" : "") +
+                $" arquivo(s) | {p.TotalBytes:N0} bytes | " +
+                $"decorrido {relogioInventario.Elapsed.ToString(@"hh\:mm\:ss")}" +
+                $" | {(totalArquivosPrevistos > 0
+                    ? EstimativaRestante.Exibir(previsao) : "ETA: indisponível")}";
+        });
         if (salvarCheckpoint)
         {
             try
@@ -805,6 +901,34 @@ public partial class Form1 : Form
 
         try
         {
+            _estado.Text = "Pré-contando arquivos para estimar o inventário (somente leitura)...";
+            try
+            {
+                totalArquivosPrevistos = await Task.Run(() =>
+                {
+                    var opcoes = new EnumerationOptions
+                    {
+                        RecurseSubdirectories = true,
+                        IgnoreInaccessible = true,
+                        AttributesToSkip = FileAttributes.ReparsePoint
+                    };
+                    long total = 0;
+                    foreach (var arquivo in Directory.EnumerateFiles(
+                        pasta, "*", opcoes))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        total = checked(total + 1);
+                    }
+                    return total;
+                }, token);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Sem população conhecida não fabricar ETA. Inventário oficial
+                // continua tratando suas próprias falhas/ocorrências.
+                totalArquivosPrevistos = 0;
+            }
+            relogioInventario.Restart();
             if (salvarHistorico)
             {
                 var filtrosAtivos = new List<string>();
@@ -821,7 +945,8 @@ public partial class Form1 : Form
                     filtro?.LimiteBytes,
                     usarSinalTemporal ? diasSelecionados : null,
                     usarSinalTemporal ? referenciaTemporalUtc : null,
-                    usarDuplicatas);
+                    usarDuplicatas,
+                    usarSinalTemporal ? "UltimoAcessoUtc" : null);
 
                 historico = await SessaoHistoricoSqliteM6.IniciarAsync(
                     pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);
@@ -837,7 +962,6 @@ public partial class Form1 : Form
                 configuracaoCompatibilidade: configuracao,
                 filtroPersonalizado: filtro,
                 observador: observador);
-            var relogioInventario = Stopwatch.StartNew();
             var resultado = await Task.Run(
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
             duracaoInventario = relogioInventario.Elapsed;
@@ -856,13 +980,20 @@ public partial class Form1 : Form
                     Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
                     Caminho = item.Entrada.CaminhoCompleto,
                     Bytes = item.Entrada.TamanhoBytes,
-                    IndiciosGerais = gerais,
+                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
                     Compatibilidade = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Estado)),
                     Justificativas = string.Join(" | ", relevantes.Select(x =>
                         x.CodigoRegra + ": " + x.Justificativa)),
                     FiltroPersonalizado = item.AcimaDoLimitePersonalizado
                         ? "Acima do limite pessoal" : "",
+                    SituacaoPreAnalise = arquivo is null ? "Pasta (não aplicável)" :
+                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
+                        !relevantes.Any(x => x.Estado is
+                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
+                            ? "Sem alertas detectados (não significa aprovado)"
+                            : "Com indícios ou alertas",
+                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
                     ModificadoUtc = arquivo?.UltimaModificacaoUtc
                 };
             }).ToList();
@@ -893,7 +1024,7 @@ public partial class Form1 : Form
                       $"{resultado.AvaliacoesNaoAvaliadas:N0} não avaliadas.";
 
             _estado.Text = $"{textoPerfil} | {estado} " +
-                (usarSinalTemporal ? $"Sinal temporal: {diasSelecionados} dias. " : "") +
+                (usarSinalTemporal ? $"Sinal temporal por ÚLTIMO ACESSO (metadado Windows): {diasSelecionados} dias. " : "") +
                 "Nenhum arquivo alterado.";
             _dicas.SetToolTip(_estado, _estado.Text);
 
@@ -903,9 +1034,16 @@ public partial class Form1 : Form
                 // A detecção usa outra varredura para não reter todos os caminhos
                 // do inventário M3, cuja tabela segue limitada a 1.000 entradas.
                 _resumoDuplicatas.Text = "Calculando grupos por tamanho e SHA-256; leitura somente...";
+                var relogioSha = Stopwatch.StartNew();
                 var progressoDuplicatas = new Progress<ProgressoDuplicatas>(p =>
+                {
+                    var eta = EstimativaRestante.Calcular(p.CandidatosComHash,
+                        p.ArquivosCandidatos, 0, 0, relogioSha.Elapsed);
                     _resumoDuplicatas.Text =
-                        $"Hash calculado: {p.CandidatosComHash:N0} de {p.ArquivosCandidatos:N0} candidatos.");
+                        $"SHA-256: {p.CandidatosComHash:N0} de {p.ArquivosCandidatos:N0} " +
+                        $"candidatos | {EstimativaRestante.Exibir(eta)} " +
+                        "(somente fase de hashes; não inclui confirmação byte a byte).";
+                });
                 var detectar = new DetectarDuplicatasExatas(
                     new FonteInventarioSistemaArquivos(),
                     new LeitorConteudoDuplicatasSistemaArquivos(),

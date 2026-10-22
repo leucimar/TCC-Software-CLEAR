@@ -17,11 +17,24 @@ public sealed class FormDetalhesHistoricoM6 : Form
     {
         Text = "Revisar envio à quarentena (M7)", AutoSize = true
     };
+    private readonly Button _selecaoFiltrada = new()
+    {
+        Text = "Filtrar e selecionar para quarentena", AutoSize = true
+    };
+    private readonly string _raizQuarentena;
     private readonly DataGridView _auditoriaQuarentena = Grade();
     private readonly Button _atualizarAuditoria = new() { Text = "Atualizar auditoria", AutoSize = true };
     private readonly Button _restaurarArquivo = new()
     {
         Text = "Revisar restauração (M8)", AutoSize = true
+    };
+    private readonly Button _restaurarLote = new()
+    {
+        Text = "Filtrar / restaurar vários (M11)", AutoSize = true
+    };
+    private readonly Button _limparVazias = new()
+    {
+        Text = "Limpar pastas VAZIAS auditadas", AutoSize = true
     };
     private readonly long _totalEntradas;
     private readonly DataGridView _entradas = Grade();
@@ -49,9 +62,11 @@ public sealed class FormDetalhesHistoricoM6 : Form
     private int _paginaDuplicatas;
     private bool _carregando;
 
-    public FormDetalhesHistoricoM6(ResumoExecucaoHistoricaM6 execucao, string banco)
+    public FormDetalhesHistoricoM6(ResumoExecucaoHistoricaM6 execucao, string banco,
+        string? raizQuarentena = null)
     {
         ArgumentNullException.ThrowIfNull(execucao);
+        _raizQuarentena = raizQuarentena ?? ServicoQuarentenaM7.RaizPadrao;
         _id = execucao.Id;
         _banco = banco;
         _execucao = execucao;
@@ -90,6 +105,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         navegacao.Controls.Add(_proxima);
         navegacao.Controls.Add(_paginaLabel);
         navegacao.Controls.Add(_quarentena);
+        navegacao.Controls.Add(_selecaoFiltrada);
         areaEntradas.Controls.Add(navegacao, 0, 0);
         areaEntradas.Controls.Add(_entradas, 0, 1);
         areaEntradas.Controls.Add(_detalhes, 0, 2);
@@ -120,6 +136,8 @@ public sealed class FormDetalhesHistoricoM6 : Form
         var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill };
         barraAuditoria.Controls.Add(_atualizarAuditoria);
         barraAuditoria.Controls.Add(_restaurarArquivo);
+        barraAuditoria.Controls.Add(_restaurarLote);
+        barraAuditoria.Controls.Add(_limparVazias);
         painelAuditoria.Controls.Add(barraAuditoria, 0, 0);
         painelAuditoria.Controls.Add(_auditoriaQuarentena, 0, 1);
         abaAuditoria.Controls.Add(painelAuditoria);
@@ -137,8 +155,48 @@ public sealed class FormDetalhesHistoricoM6 : Form
 
         _entradas.SelectionChanged += (_, _) => ExibirEvidenciasSelecionadas();
         _quarentena.Click += async (_, _) => await RevisarQuarentenaAsync();
+        _selecaoFiltrada.Click += (_, _) =>
+        {
+            using var janela = new FormSelecaoQuarentenaM10(
+                _execucao, _banco, _raizQuarentena);
+            janela.ShowDialog(this);
+            _ = AtualizarAuditoriaAsync();
+        };
         _atualizarAuditoria.Click += async (_, _) => await AtualizarAuditoriaAsync();
         _restaurarArquivo.Click += async (_, _) => await RevisarRestauracaoAsync();
+        _restaurarLote.Click += (_, _) =>
+        {
+            using var janela = new FormRestauracaoLoteM11(
+                _id, ServicoQuarentenaM7.BancoAuditoriaPadrao);
+            janela.ShowDialog(this);
+            _ = AtualizarAuditoriaAsync();
+        };
+        _limparVazias.Click += async (_, _) =>
+        {
+            var resposta = MessageBox.Show(this,
+                "Remover apenas PASTAS VAZIAS associadas aos destinos " +
+                "registrados na auditoria?" + Environment.NewLine +
+                "A quarentena principal e TODOS OS ARQUIVOS serão preservados." +
+                Environment.NewLine + "Pasta: " + _raizQuarentena,
+                "CLEAR — Confirmação da limpeza",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+            if (resposta != DialogResult.Yes) return;
+            _limparVazias.Enabled = false;
+            try
+            {
+                var total = await LimpadorPastasVaziasM11.LimparAsync(
+                    ServicoQuarentenaM7.BancoAuditoriaPadrao, _raizQuarentena, true);
+                MessageBox.Show(this, $"Pastas vazias removidas: {total:N0}." +
+                    Environment.NewLine + "Nenhum arquivo foi apagado.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Falha na limpeza segura: " + ex.Message,
+                    "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally { _limparVazias.Enabled = true; }
+        };
         Shown += async (_, _) =>
         {
             await CarregarEntradasAsync(0);
@@ -233,7 +291,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         {
             // Etapa 1: somente pré-verificação. Não move nem registra ações.
             var plano = await ServicoQuarentenaM7.PrepararAsync(
-                item, _execucao, ServicoQuarentenaM7.RaizPadrao);
+                item, _execucao, _raizQuarentena);
 
             // Etapa 2: a mudança de localização exige confirmação humana explícita.
             // O botão padrão é NÃO; fechar a janela também cancela.
@@ -377,6 +435,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
             $"Caminho: {item.Caminho}" + Environment.NewLine +
             $"Tipo: {item.Tipo} | Tamanho: {item.TamanhoBytes?.ToString() ?? "N/D"} bytes" +
             Environment.NewLine + $"Modificado em UTC: {item.ModificadoUtc}" +
+            Environment.NewLine + $"Último acesso registrado UTC: {item.AcessadoUtc ?? "Indisponível"}" +
             Environment.NewLine + $"Acima do limite pessoal: {(item.AcimaDoLimitePessoal ? "Sim" : "Não")}" +
             Environment.NewLine + Environment.NewLine +
             "CATEGORIAS" + Environment.NewLine + FormatJson(item.CategoriasJson) +

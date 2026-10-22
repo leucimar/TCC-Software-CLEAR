@@ -113,7 +113,7 @@ public sealed class ServicoRestauracaoM8Tests
             await conexao.OpenAsync();
             await using var comando = conexao.CreateCommand();
             comando.CommandText = "PRAGMA user_version;";
-            Assert.AreEqual(1L, Convert.ToInt64(await comando.ExecuteScalarAsync()));
+            Assert.AreEqual(2L, Convert.ToInt64(await comando.ExecuteScalarAsync()));
         }
         var result = await ServicoRestauracaoM8.RestaurarAsync(plano, true, c.Banco);
         Assert.AreEqual("Restaurado", result.Estado);

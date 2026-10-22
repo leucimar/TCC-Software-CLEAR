@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Clear.Application.Amostragem;
+using Clear.Application.Progresso;
 using Clear.Infrastructure.Amostragem;
 
 namespace Clear.Desktop;
@@ -247,10 +249,19 @@ public sealed class FormSubBaseExperimental : Form
         _estado.Text = "Copiando arquivos e verificando integridade...";
         try
         {
+            var relogio = Stopwatch.StartNew();
             var progresso = new Progress<ProgressoCopiaAmostra>(p =>
+            {
+                var estimado = EstimativaRestante.Calcular(p.ArquivosCopiados,
+                    p.TotalArquivos, p.BytesCopiados, p.TotalBytes, relogio.Elapsed);
+                var percentual = p.TotalBytes > 0
+                    ? 100.0 * p.BytesCopiados / p.TotalBytes : 0;
                 _estado.Text =
                     $"COPIANDO: {p.ArquivosCopiados:N0}/{p.TotalArquivos:N0} " +
-                    $"arquivos | {p.BytesCopiados:N0}/{p.TotalBytes:N0} bytes.");
+                    $"arquivos | {p.BytesCopiados:N0}/{p.TotalBytes:N0} bytes " +
+                    $"({percentual:F1}% volume) | decorrido {relogio.Elapsed.ToString(@"hh\:mm\:ss")} " +
+                    $"| {EstimativaRestante.Exibir(estimado)}";
+            });
             var resultado = await CriadorSubBaseExperimental.ExecutarAsync(
                 _origemPlanejada!, _destinoPlanejado!, plano, progresso,
                 _cancelamento.Token);

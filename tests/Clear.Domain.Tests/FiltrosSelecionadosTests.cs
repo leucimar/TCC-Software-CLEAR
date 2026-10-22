@@ -8,7 +8,7 @@ public sealed class FiltrosSelecionadosTests
 {
     private static readonly DateTimeOffset Agora = new(2026, 10, 15, 20, 0, 0, TimeSpan.Zero);
     private static readonly ArquivoInventariado AntigoVazioBackup =
-        new(@"C:\Teste\vazio.bak", 0, Agora.AddDays(-500));
+        new(@"C:\Teste\vazio.bak", 0, Agora.AddDays(-500), Agora.AddDays(-500));
 
     [TestMethod]
     public void NenhumaRegraGeralHabilitadaNaoClassificaArquivo()

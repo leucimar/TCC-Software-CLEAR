@@ -12,7 +12,8 @@ public sealed record ParametrosHistoricoM6(
     long? LimitePersonalizadoBytes,
     int? DiasSinalTemporal,
     DateTimeOffset? ReferenciaTemporalUtc,
-    bool DetectarDuplicatas)
+    bool DetectarDuplicatas,
+    string? CriterioTemporal = null)
 {
     public static ParametrosHistoricoM6 SemFiltros { get; } = new(
         Array.Empty<string>(), null, null, Array.Empty<string>(), null, null, null, false);
