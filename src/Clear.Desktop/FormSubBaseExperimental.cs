@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Clear.Application.Amostragem;
 using Clear.Application.Progresso;
 using Clear.Infrastructure.Amostragem;
@@ -89,7 +89,7 @@ public sealed class FormSubBaseExperimental : Form
         }, 0, 3);
         painel.Controls.Add(_semente, 1, 3);
 
-        var botoes = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var botoes = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         botoes.Controls.Add(_preparar);
         botoes.Controls.Add(_copiar);
         botoes.Controls.Add(_cancelar);
@@ -100,6 +100,7 @@ public sealed class FormSubBaseExperimental : Form
         painel.Controls.Add(_estado, 0, 6);
         painel.SetColumnSpan(_estado, 3);
         Controls.Add(painel);
+        TemaVisual.Registrar(this);
 
         _resumo.Text = "Os arquivos escolhidos serão COPIADOS e conferidos via SHA-256. " +
             "Nada será movido, apagado ou sobrescrito na origem. " +

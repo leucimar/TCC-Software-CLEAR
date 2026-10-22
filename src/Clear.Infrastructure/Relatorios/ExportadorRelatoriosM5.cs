@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Clear.Application.Duplicatas;
@@ -32,7 +32,7 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
 {
     private const string CabecalhoInventario =
         "Tipo;Nome;Caminho;TamanhoBytes;UltimaModificacaoUtc;UltimoAcessoUtc;CategoriasGerais;SituacaoPreAnalise;" +
-        "EvidenciasGerais;EstadosDasRegras;JustificativasCompatibilidade;AcimaLimitePessoal";
+        "EvidenciasGerais;EstadosDasRegras;JustificativasCompatibilidade;AcimaLimitePessoal;DuplicataExata";
     private const string CabecalhoDuplicatas =
         "Grupo;Caminho;TamanhoBytes;SHA256;BytesPotencialmenteRedundantesGrupo";
 
@@ -92,10 +92,9 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
         StreamWriter? escritor = null;
         try
         {
-            escritor = new StreamWriter(new FileStream(prefixo + "_inventario.csv.part",
+            escritor = new StreamWriter(new FileStream(prefixo + "_registros.jsonl.part",
                 FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 bufferSize: 65536, useAsync: true), new UTF8Encoding(true), 65536);
-            escritor.WriteLine(CabecalhoInventario);
             return new ExportadorRelatoriosM5(raiz, destino, filtro, prefixo, escritor);
         }
         catch
@@ -125,18 +124,6 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             x.Estado == EstadoVerificacao.Alerta);
         var excede = avaliacaoCompatibilidade.AcimaDoLimitePersonalizado;
 
-        var incluir = _filtro switch
-        {
-            FiltroLinhasRelatorio.TodasAsEntradas => true,
-            FiltroLinhasRelatorio.ApenasIndiciosGerais => temIndicios,
-            FiltroLinhasRelatorio.ApenasIncompatibilidades => temIncompatibilidade,
-            FiltroLinhasRelatorio.ApenasTamanhoPersonalizado => excede,
-            FiltroLinhasRelatorio.ApenasAchados => temIndicios || temIncompatibilidade || excede,
-            _ => throw new InvalidOperationException("Filtro desconhecido.")
-        };
-        if (!incluir)
-            return;
-
         var estados = avaliacaoCompatibilidade.Verificacoes
             .Where(x => x.Estado != EstadoVerificacao.Desabilitada)
             .Select(x => x.CodigoRegra + ":" + x.Estado);
@@ -163,9 +150,10 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             string.Join(" | ", motivos),
             excede ? "Sim" : "Nao"
         };
-        await _escritor.WriteLineAsync(LinhaCsv(valores).AsMemory(), cancellationToken)
+        var registro = new RegistroExportacao(valores, temIndicios, temIncompatibilidade,
+            temAlertaCompatibilidade, excede);
+        await _escritor.WriteLineAsync(JsonSerializer.Serialize(registro).AsMemory(), cancellationToken)
             .ConfigureAwait(false);
-        _linhasExportadas = checked(_linhasExportadas + 1);
     }
 
     public async Task<RelatoriosGerados> ConcluirAsync(
@@ -188,6 +176,44 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
             cancellationToken.ThrowIfCancellationRequested();
             await _escritor.FlushAsync(cancellationToken).ConfigureAwait(false);
             await _escritor.DisposeAsync().ConfigureAwait(false);
+
+            // O SHA-256 é concluído depois do inventário. Consolidar em disco evita
+            // perder duplicatas no filtro e mantém o consumo de memória limitado.
+            var caminhosDuplicados = duplicatas?.Grupos.SelectMany(g => g.Arquivos)
+                .Select(a => a.CaminhoCompleto).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var leitor = new StreamReader(_prefixo + "_registros.jsonl.part"))
+            await using (var escritor = new StreamWriter(new FileStream(csv + ".part",
+                FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true), new UTF8Encoding(true)))
+            {
+                await escritor.WriteLineAsync(CabecalhoInventario.AsMemory(), cancellationToken);
+                while (await leitor.ReadLineAsync(cancellationToken) is { } linha)
+                {
+                    var registro = JsonSerializer.Deserialize<RegistroExportacao>(linha)
+                        ?? throw new InvalidDataException("Registro de exportação inválido.");
+                    var duplicada = caminhosDuplicados.Contains(registro.Valores[2]);
+                    var alerta = registro.Indicios || registro.Incompatibilidade ||
+                        registro.Alerta || registro.Excede || duplicada;
+                    var incluir = _filtro switch
+                    {
+                        FiltroLinhasRelatorio.TodasAsEntradas => true,
+                        FiltroLinhasRelatorio.ApenasIndiciosGerais => registro.Indicios,
+                        FiltroLinhasRelatorio.ApenasIncompatibilidades => registro.Incompatibilidade,
+                        FiltroLinhasRelatorio.ApenasTamanhoPersonalizado => registro.Excede,
+                        FiltroLinhasRelatorio.ApenasAchados => alerta,
+                        _ => throw new InvalidOperationException("Filtro desconhecido.")
+                    };
+                    if (!incluir) continue;
+                    registro.Valores[7] = alerta ? "Com indicios/alertas" :
+                        registro.Valores[0] == "Pasta" ? "Pasta (nao aplicavel)" :
+                        "Sem alertas detectados (nao significa aprovado)";
+                    await escritor.WriteLineAsync(LinhaCsv(registro.Valores.Append(
+                        duplicada ? "Sim" : "Nao")).AsMemory(), cancellationToken);
+                    _linhasExportadas = checked(_linhasExportadas + 1);
+                }
+                await escritor.FlushAsync(cancellationToken);
+            }
+            ExcluirSeExistir(_prefixo + "_registros.jsonl.part");
 
             if (csvDuplicatas is not null)
             {
@@ -305,10 +331,14 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
         if (_descartado) return;
         _descartado = true;
         await _escritor.DisposeAsync().ConfigureAwait(false);
+        ExcluirSeExistir(_prefixo + "_registros.jsonl.part");
         ExcluirSeExistir(_prefixo + "_inventario.csv.part");
         ExcluirSeExistir(_prefixo + "_resumo.json.part");
         ExcluirSeExistir(_prefixo + "_duplicatas.csv.part");
     }
+
+    private sealed record RegistroExportacao(string[] Valores, bool Indicios,
+        bool Incompatibilidade, bool Alerta, bool Excede);
 
     private static void ExcluirSeExistir(string arquivo)
     {

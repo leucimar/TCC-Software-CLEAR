@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -36,6 +36,8 @@ public static class CriadorSubBaseExperimental
         CancellationToken cancelamento = default)
     {
         var raiz = ValidarOrigemDestino(origem, destino);
+        if (Directory.Exists(destino) || File.Exists(destino))
+            throw new IOException("A sub-base de destino já existe; escolha um novo nome.");
         var pilha = new Stack<DirectoryInfo>();
         pilha.Push(new DirectoryInfo(raiz));
         var arquivos = new List<ArquivoCandidatoAmostra>();

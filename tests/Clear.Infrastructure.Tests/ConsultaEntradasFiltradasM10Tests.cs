@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using Clear.Application.Inventario;
 using Clear.Domain.Arquivos;
 using Clear.Domain.Inventario;
@@ -24,6 +24,22 @@ public sealed class ConsultaEntradasFiltradasM10Tests
         Assert.AreEqual(1L, total);
         Assert.HasCount(1, dados);
         StringAssert.EndsWith(dados[0].Caminho, "relatorio.bak");
+    }
+
+    [TestMethod]
+    public void PreviaDeAmostraRecusaDestinoOcupado()
+    {
+        var pasta = Directory.CreateTempSubdirectory("CLEAR_Previa_").FullName;
+        try
+        {
+            var origem = Directory.CreateDirectory(Path.Combine(pasta, "origem")).FullName;
+            var destino = Directory.CreateDirectory(Path.Combine(pasta, "ocupado")).FullName;
+            File.WriteAllText(Path.Combine(destino, "preservar.txt"), "conteudo");
+            Assert.ThrowsExactly<IOException>(() =>
+                Clear.Infrastructure.Amostragem.CriadorSubBaseExperimental.Preparar(origem, destino));
+            Assert.AreEqual("conteudo", File.ReadAllText(Path.Combine(destino, "preservar.txt")));
+        }
+        finally { Directory.Delete(pasta, true); }
     }
 
     [TestMethod]
