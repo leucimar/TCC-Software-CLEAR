@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Clear.Infrastructure.Historico;
@@ -65,18 +65,38 @@ public static class ConsultaEntradasFiltradasM10
 
     public static async Task<(IReadOnlyList<EntradaHistoricaM6> Entradas, long Total)>
         ConsultarAsync(string banco, string execucao, FiltrosEntradasM10 filtro,
-            int pagina, CancellationToken token = default)
+            int pagina, CancellationToken token = default,
+            IReadOnlySet<string>? caminhosIndisponiveis = null)
     {
         Validar(execucao, filtro, pagina);
         await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        var condicoes = Condicoes;
+        if (caminhosIndisponiveis is { Count: > 0 })
+        {
+            // A exclusão precisa preceder COUNT/LIMIT, para não produzir páginas vazias.
+            // A tabela é temporária e não modifica o histórico aberto somente para leitura.
+            await using var criar = db.CreateCommand();
+            criar.CommandText = "CREATE TEMP TABLE indisponiveis(caminho TEXT PRIMARY KEY COLLATE NOCASE);";
+            await criar.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            await using var inserir = db.CreateCommand();
+            inserir.CommandText = "INSERT OR IGNORE INTO temp.indisponiveis VALUES ($c);";
+            var parametro = inserir.Parameters.Add("$c", SqliteType.Text);
+            foreach (var caminho in caminhosIndisponiveis)
+            {
+                token.ThrowIfCancellationRequested();
+                parametro.Value = caminho;
+                await inserir.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            }
+            condicoes += " AND NOT EXISTS (SELECT 1 FROM temp.indisponiveis i WHERE i.caminho = e.caminho)";
+        }
         await using var contagem = db.CreateCommand();
-        contagem.CommandText = "SELECT COUNT(*) FROM entradas AS e WHERE " + Condicoes;
+        contagem.CommandText = "SELECT COUNT(*) FROM entradas AS e WHERE " + condicoes;
         Parametros(contagem, execucao, filtro);
         var total = Convert.ToInt64(
             await contagem.ExecuteScalarAsync(token).ConfigureAwait(false),
             CultureInfo.InvariantCulture);
         await using var cmd = db.CreateCommand();
-        cmd.CommandText = $"SELECT {Colunas} FROM entradas AS e WHERE " + Condicoes +
+        cmd.CommandText = $"SELECT {Colunas} FROM entradas AS e WHERE " + condicoes +
             " ORDER BY e.id LIMIT $lim OFFSET $offset";
         Parametros(cmd, execucao, filtro);
         cmd.Parameters.AddWithValue("$lim", ConsultaHistoricoSqliteM6.TamanhoPagina);

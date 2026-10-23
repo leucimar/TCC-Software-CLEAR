@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Clear.Application.Amostragem;
 using Clear.Application.Progresso;
 using Clear.Infrastructure.Amostragem;
@@ -52,12 +52,12 @@ public sealed class FormSubBaseExperimental : Form
             Dock = DockStyle.Fill, Padding = new Padding(14),
             ColumnCount = 3, RowCount = 7
         };
-        painel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+        painel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         painel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        painel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        painel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         for (var i = 0; i < 4; i++)
-            painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
-        painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
+            painel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        painel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         painel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
@@ -89,7 +89,7 @@ public sealed class FormSubBaseExperimental : Form
         }, 0, 3);
         painel.Controls.Add(_semente, 1, 3);
 
-        var botoes = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var botoes = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         botoes.Controls.Add(_preparar);
         botoes.Controls.Add(_copiar);
         botoes.Controls.Add(_cancelar);
@@ -100,6 +100,7 @@ public sealed class FormSubBaseExperimental : Form
         painel.Controls.Add(_estado, 0, 6);
         painel.SetColumnSpan(_estado, 3);
         Controls.Add(painel);
+        TemaVisual.Registrar(this);
 
         _resumo.Text = "Os arquivos escolhidos serão COPIADOS e conferidos via SHA-256. " +
             "Nada será movido, apagado ou sobrescrito na origem. " +

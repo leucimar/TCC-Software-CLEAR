@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Clear.Application.Duplicatas;
 using Clear.Application.Inventario;
@@ -128,7 +128,7 @@ public sealed class ExportadorRelatoriosM5Tests
                 new[] { grupo }, Array.Empty<OcorrenciaInventario>(), 0);
 
             await using var exportador = ExportadorRelatoriosM5.Iniciar(
-                raiz, saida, FiltroLinhasRelatorio.TodasAsEntradas);
+                raiz, saida, FiltroLinhasRelatorio.ApenasAchados);
             var inventario = await new InventariarDiretorio(
                 new FonteSintetica(EntradaInventariada.DeArquivo(a),
                     EntradaInventariada.DeArquivo(b)),
@@ -136,6 +136,10 @@ public sealed class ExportadorRelatoriosM5Tests
             var arquivos = await exportador.ConcluirAsync(inventario, duplicatas,
                 new[] { "DuplicatasSHA256" }, null, null);
 
+            Assert.AreEqual(2L, arquivos.LinhasExportadas);
+            var csv = await File.ReadAllTextAsync(arquivos.InventarioCsv);
+            Assert.IsFalse(csv.Contains("Sem alertas detectados", StringComparison.Ordinal));
+            StringAssert.Contains(csv, "DuplicataExata");
             Assert.IsNotNull(arquivos.DuplicatasCsv);
             Assert.HasCount(3, File.ReadAllLines(arquivos.DuplicatasCsv!));
             using var json = JsonDocument.Parse(await File.ReadAllTextAsync(arquivos.ResumoJson));

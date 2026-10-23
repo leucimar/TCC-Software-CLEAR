@@ -1,0 +1,117 @@
+{
+  "falhas": 0,
+  "resultados": [
+    {
+      "nome": "Invent\u00E1rio 467 arquivos / 43 pastas / 25.723.860 bytes",
+      "aprovado": true
+    },
+    {
+      "nome": "24 incompatibilidades SharePoint",
+      "aprovado": true
+    },
+    {
+      "nome": "12 arquivos acima de 1 MiB",
+      "aprovado": true
+    },
+    {
+      "nome": "Duplicatas com 1 leitor(es): 16 grupos e 111 membros",
+      "aprovado": true
+    },
+    {
+      "nome": "Duplicatas com 2 leitor(es): 16 grupos e 111 membros",
+      "aprovado": true
+    },
+    {
+      "nome": "Mesmos grupos com 2 leitores",
+      "aprovado": true
+    },
+    {
+      "nome": "Duplicatas com 4 leitor(es): 16 grupos e 111 membros",
+      "aprovado": true
+    },
+    {
+      "nome": "Mesmos grupos com 4 leitores",
+      "aprovado": true
+    },
+    {
+      "nome": "Duplicatas com 8 leitor(es): 16 grupos e 111 membros",
+      "aprovado": true
+    },
+    {
+      "nome": "Mesmos grupos com 8 leitores",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV TodasAsEntradas: todos os caminhos esperados",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV TodasAsEntradas: duplicatas nunca sem alertas",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV TodasAsEntradas: pastas sem alerta com situa\u00E7\u00E3o pr\u00F3pria",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIndiciosGerais: todos os caminhos esperados",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIndiciosGerais: duplicatas nunca sem alertas",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIndiciosGerais: pastas sem alerta com situa\u00E7\u00E3o pr\u00F3pria",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIncompatibilidades: todos os caminhos esperados",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIncompatibilidades: duplicatas nunca sem alertas",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasIncompatibilidades: pastas sem alerta com situa\u00E7\u00E3o pr\u00F3pria",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasTamanhoPersonalizado: todos os caminhos esperados",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasTamanhoPersonalizado: duplicatas nunca sem alertas",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasTamanhoPersonalizado: pastas sem alerta com situa\u00E7\u00E3o pr\u00F3pria",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasAchados: todos os caminhos esperados",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasAchados: duplicatas nunca sem alertas",
+      "aprovado": true
+    },
+    {
+      "nome": "Filtro CSV ApenasAchados: pastas sem alerta com situa\u00E7\u00E3o pr\u00F3pria",
+      "aprovado": true
+    },
+    {
+      "nome": "Hist\u00F3rico simples recupera os 111 indicadores de duplicata",
+      "aprovado": true
+    },
+    {
+      "nome": "P\u00E1gina dispon\u00EDvel completa ap\u00F3s excluir 205",
+      "aprovado": true
+    },
+    {
+      "nome": "Nenhum relat\u00F3rio tempor\u00E1rio restante",
+      "aprovado": true
+    }
+  ]
+}

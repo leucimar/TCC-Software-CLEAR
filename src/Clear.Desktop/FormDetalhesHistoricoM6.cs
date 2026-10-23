@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Clear.Infrastructure.Historico;
 using Clear.Infrastructure.Quarentena;
 
@@ -58,6 +58,11 @@ public sealed class FormDetalhesHistoricoM6 : Form
     };
     private readonly Button _anteriorDuplicatas = new() { Text = "Anterior", AutoSize = true };
     private readonly Button _proximaDuplicatas = new() { Text = "Próxima", AutoSize = true };
+    private int _paginaAuditoria;
+    private readonly Button _anteriorAuditoria = new() { Text = "Anterior", AutoSize = true };
+    private readonly Button _proximaAuditoria = new() { Text = "Próxima", AutoSize = true };
+    private readonly Label _infoAuditoria = new() { AutoSize = true, Padding = new Padding(0, 10, 0, 0) };
+    private readonly Button _exportarAuditoria = new() { Text = "Exportar auditoria completa", AutoSize = true };
     private int _pagina;
     private int _paginaDuplicatas;
     private bool _carregando;
@@ -71,7 +76,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         _banco = banco;
         _execucao = execucao;
         _totalEntradas = execucao.EntradasPersistidas;
-        Text = "CLEAR — Consulta histórica (somente leitura) — " +
+        Text = "CLEAR — Histórico e operações auditadas — " +
                execucao.InicioUtc.ToString("dd/MM/yyyy HH:mm");
         MinimumSize = new Size(950, 640);
         Size = new Size(1220, 770);
@@ -81,11 +86,11 @@ public sealed class FormDetalhesHistoricoM6 : Form
             Dock = DockStyle.Fill, Padding = new Padding(8),
             RowCount = 2, ColumnCount = 1
         };
-        raiz.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
+        raiz.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         raiz.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         raiz.Controls.Add(new Label
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 0, 0, 12),
             Text = $"Análise salva em {execucao.InicioUtc:dd/MM/yyyy HH:mm} UTC | " +
                    $"Estado: {execucao.Estado} | Entradas: {_totalEntradas:N0} | " +
                    $"Grupos: {execucao.GruposDuplicatas:N0}" + Environment.NewLine +
@@ -94,13 +99,13 @@ public sealed class FormDetalhesHistoricoM6 : Form
             AutoEllipsis = true
         }, 0, 0);
 
-        var abas = new TabControl { Dock = DockStyle.Fill };
+        var abas = new AbasTematicas { Dock = DockStyle.Fill };
         var abaEntradas = new TabPage("Arquivos e classificações");
         var areaEntradas = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
-        areaEntradas.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        areaEntradas.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         areaEntradas.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
         areaEntradas.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-        var navegacao = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var navegacao = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         navegacao.Controls.Add(_anterior);
         navegacao.Controls.Add(_proxima);
         navegacao.Controls.Add(_paginaLabel);
@@ -114,9 +119,9 @@ public sealed class FormDetalhesHistoricoM6 : Form
 
         var abaDuplicatas = new TabPage("Grupos de duplicatas");
         var areaDuplicatas = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
-        areaDuplicatas.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        areaDuplicatas.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         areaDuplicatas.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var navegacaoDuplicatas = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var navegacaoDuplicatas = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         navegacaoDuplicatas.Controls.Add(_anteriorDuplicatas);
         navegacaoDuplicatas.Controls.Add(_proximaDuplicatas);
         navegacaoDuplicatas.Controls.Add(_paginaDuplicatasLabel);
@@ -131,9 +136,12 @@ public sealed class FormDetalhesHistoricoM6 : Form
 
         var abaAuditoria = new TabPage("Auditoria da quarentena — M7");
         var painelAuditoria = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
-        painelAuditoria.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        painelAuditoria.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         painelAuditoria.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var barraAuditoria = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        barraAuditoria.Controls.AddRange(new Control[] { _anteriorAuditoria,
+            _proximaAuditoria, _infoAuditoria, _exportarAuditoria });
+        barraAuditoria.SetFlowBreak(_exportarAuditoria, true);
         barraAuditoria.Controls.Add(_atualizarAuditoria);
         barraAuditoria.Controls.Add(_restaurarArquivo);
         barraAuditoria.Controls.Add(_restaurarLote);
@@ -161,6 +169,21 @@ public sealed class FormDetalhesHistoricoM6 : Form
                 _execucao, _banco, _raizQuarentena);
             janela.ShowDialog(this);
             _ = AtualizarAuditoriaAsync();
+        };
+        _anteriorAuditoria.Click += async (_, _) => { _paginaAuditoria--; await AtualizarAuditoriaAsync(); };
+        _proximaAuditoria.Click += async (_, _) => { _paginaAuditoria++; await AtualizarAuditoriaAsync(); };
+        _exportarAuditoria.Click += async (_, _) =>
+        {
+            using var dialogo = new SaveFileDialog { Filter = "CSV|*.csv",
+                FileName = "CLEAR_Auditoria_" + _id + ".csv" };
+            if (dialogo.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                var total = await ServicoQuarentenaM7.ExportarAuditoriaCsvAsync(
+                    ServicoQuarentenaM7.BancoAuditoriaPadrao, _id, dialogo.FileName);
+                _infoAuditoria.Text = $"Exportados {total:N0} registros.";
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Exportação da auditoria"); }
         };
         _atualizarAuditoria.Click += async (_, _) => await AtualizarAuditoriaAsync();
         _restaurarArquivo.Click += async (_, _) => await RevisarRestauracaoAsync();
@@ -197,6 +220,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
             }
             finally { _limparVazias.Enabled = true; }
         };
+        TemaVisual.Registrar(this);
         Shown += async (_, _) =>
         {
             await CarregarEntradasAsync(0);
@@ -343,7 +367,15 @@ public sealed class FormDetalhesHistoricoM6 : Form
         try
         {
             var lista = await ServicoQuarentenaM7.ConsultarAsync(
+                ServicoQuarentenaM7.BancoAuditoriaPadrao, _id, pagina: _paginaAuditoria);
+            if (_paginaAuditoria > 0 && lista.Count == 0)
+            { _paginaAuditoria = 0; lista = await ServicoQuarentenaM7.ConsultarAsync(
+                ServicoQuarentenaM7.BancoAuditoriaPadrao, _id); }
+            _anteriorAuditoria.Enabled = _paginaAuditoria > 0;
+            var total = await ServicoQuarentenaM7.ContarAuditoriaAsync(
                 ServicoQuarentenaM7.BancoAuditoriaPadrao, _id);
+            _proximaAuditoria.Enabled = ((long)_paginaAuditoria + 1) * 200 < total;
+            _infoAuditoria.Text = $"Página {_paginaAuditoria + 1}/{Math.Max(1, (total + 199) / 200)} • {lista.Count} de {total:N0} registros";
             _auditoriaQuarentena.DataSource = lista.ToList();
         }
         catch (Exception ex)
@@ -450,10 +482,11 @@ public sealed class FormDetalhesHistoricoM6 : Form
         try
         {
             using var json = JsonDocument.Parse(value);
-            return JsonSerializer.Serialize(json.RootElement,
-                new JsonSerializerOptions { WriteIndented = true });
+            return string.Join(Environment.NewLine, json.RootElement.EnumerateArray().Select(item =>
+                item.ValueKind == JsonValueKind.String ? "• " + item.GetString() :
+                "• " + string.Join(" | ", item.EnumerateObject().Select(p => p.Name + ": " + p.Value))));
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             return value;
         }

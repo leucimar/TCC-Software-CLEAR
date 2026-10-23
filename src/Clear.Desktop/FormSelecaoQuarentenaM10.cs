@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Clear.Application.Progresso;
 using Clear.Domain.Analise;
 using Clear.Infrastructure.Historico;
@@ -33,9 +33,9 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly CheckBox _filtrarData = new()
         { Text = "Último acesso entre datas", AutoSize = true };
     private readonly DateTimePicker _desde = new()
-        { Format = DateTimePickerFormat.Short, Width = 110 };
+        { Format = DateTimePickerFormat.Short, Width = 165 };
     private readonly DateTimePicker _ate = new()
-        { Format = DateTimePickerFormat.Short, Width = 110 };
+        { Format = DateTimePickerFormat.Short, Width = 165 };
     private readonly TextBox _trecho = new()
         { Width = 170, PlaceholderText = "Pasta ou nome" };
     private readonly Button _buscar = new() { Text = "Aplicar filtros", AutoSize = true };
@@ -87,12 +87,12 @@ public sealed class FormSelecaoQuarentenaM10 : Form
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4,
             ColumnCount = 1, Padding = new Padding(8) };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
 
-        var filtros = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true,
+        var filtros = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, AutoScroll = true,
             FlowDirection = FlowDirection.LeftToRight, WrapContents = true,
             Padding = new Padding(4), BackColor = SystemColors.ControlLight };
         filtros.Controls.Add(new Label { Text = "Categoria:", AutoSize = true });
@@ -114,7 +114,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         filtros.Controls.Add(_buscar);
         layout.Controls.Add(filtros, 0, 0);
 
-        var barra = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var barra = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         foreach (var controle in new Control[] { _anterior, _proximo,
             _selecionarPagina, _selecionarTodos, _limpar, _mover, _cancelar })
             barra.Controls.Add(controle);
@@ -225,6 +225,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         };
         _mover.Click += async (_, _) => await ExecutarSelecaoAsync();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
+        TemaVisual.Registrar(this);
         Shown += async (_, _) => await CarregarAsync(0);
         FormClosing += (_, e) =>
         {
@@ -281,18 +282,19 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         {
             await AtualizarCaminhosIndisponiveisAsync();
             var consulta = await ConsultaEntradasFiltradasM10.ConsultarAsync(
-                _banco, _execucao.Id, _filtro, pagina);
+                _banco, _execucao.Id, _filtro, pagina,
+                    caminhosIndisponiveis: _caminhosIndisponiveis);
             if (pagina > 0 && consulta.Entradas.Count == 0)
             {
                 pagina = (int)Math.Max(0, (consulta.Total - 1) /
                     ConsultaHistoricoSqliteM6.TamanhoPagina);
                 consulta = await ConsultaEntradasFiltradasM10.ConsultarAsync(
-                    _banco, _execucao.Id, _filtro, pagina);
+                    _banco, _execucao.Id, _filtro, pagina,
+                    caminhosIndisponiveis: _caminhosIndisponiveis);
             }
             _pagina = pagina;
             _totalFiltrado = consulta.Total;
-            _paginaAtual = consulta.Entradas.Where(e =>
-                !_caminhosIndisponiveis.Contains(e.Caminho)).ToList();
+            _paginaAtual = consulta.Entradas.ToList();
             AtualizarMarcacoes();
             _anterior.Enabled = pagina > 0;
             _proximo.Enabled = (long)(pagina + 1) *
@@ -330,7 +332,7 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         if (SemAlertasDetectados(e))
             return "Sem alertas detectados (não significa aprovado)";
         var marcadores = new List<string>();
-        if (e.CategoriasJson != "[]") marcadores.Add(e.CategoriasJson);
+        if (e.CategoriasJson != "[]") marcadores.Add(ApresentacaoResultados.Categorias(e.CategoriasJson));
         if (e.AcimaDoLimitePessoal) marcadores.Add("ACIMA LIMITE");
         if (e.EhDuplicataExata) marcadores.Add("DUPLICATA EXATA");
         if (e.VerificacoesJson.Contains("IncompatibilidadeDocumentada", StringComparison.Ordinal))
@@ -341,9 +343,10 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     }
 
     private void ExibirEstado() =>
-        _estado.Text = $"Histórico filtrado: {_totalFiltrado:N0} | Disponíveis nesta página: {_paginaAtual.Count:N0}" +
+        _estado.Text = $"Disponíveis nos filtros: {_totalFiltrado:N0} | Disponíveis nesta página: {_paginaAtual.Count:N0}" +
             $" | Página {_pagina + 1} | Marcados: {_selecionados.Count:N0}. " +
-            "Itens em quarentena ficam ocultos. Sem alertas não significa aprovado.";
+            (_totalFiltrado == 0 ? "Nenhum arquivo disponível. Revise os filtros ou consulte a auditoria." :
+                "Itens em quarentena ficam ocultos. Sem alertas não significa aprovado.");
 
     private async Task ExecutarSelecaoAsync()
     {
@@ -383,18 +386,16 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         }
         var semAlertas = entradas.Count(SemAlertasDetectados);
         var caminhosDeExemplo = string.Join(Environment.NewLine,
-            entradas.Take(12).Select(e => "  • " + e.Caminho));
-        var avisoExcedentes = entradas.Count > 12
-            ? Environment.NewLine + $"... e mais {entradas.Count - 12:N0} arquivo(s) " +
-              "marcados em outras páginas/filtros." : "";
-        var resposta = MessageBox.Show(this,
+            entradas.Select(e => "  • " + e.Caminho));
+        var avisoExcedentes = "";
+        var resposta = DialogoRevisao.Confirmar(this,
             $"CONFIRMAR A MOVIMENTAÇÃO PARA QUARENTENA DE {quantidade:N0} ARQUIVOS?" +
             Environment.NewLine + $"Total histórico: {tamanho:N0} bytes" +
             Environment.NewLine + $"Sem alertas detectados no lote: {semAlertas:N0} (não significa aprovado)." +
             Environment.NewLine + $"Origem da análise: {_execucao.DiretorioRaiz}" +
             Environment.NewLine + $"Raiz da quarentena: {_destino}" +
             Environment.NewLine + "APENAS IDs INDIVIDUALMENTE SELECIONADOS." +
-            Environment.NewLine + "Caminhos incluídos (amostra):" +
+            Environment.NewLine + "Todos os caminhos selecionados:" +
             Environment.NewLine + caminhosDeExemplo + avisoExcedentes +
             Environment.NewLine + Environment.NewLine +
             "Cada arquivo será revalidado pelo M7 (tamanho, data, SHA-256)." +

@@ -1,0 +1,22 @@
+[
+  {
+    "leitores": 1,
+    "milissegundos": 3192.1332,
+    "workingSetBytes": 62185472
+  },
+  {
+    "leitores": 2,
+    "milissegundos": 300.7941,
+    "workingSetBytes": 63324160
+  },
+  {
+    "leitores": 4,
+    "milissegundos": 279.3328,
+    "workingSetBytes": 65105920
+  },
+  {
+    "leitores": 8,
+    "milissegundos": 284.234,
+    "workingSetBytes": 69492736
+  }
+]
