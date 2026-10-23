@@ -9,6 +9,10 @@
 - Contexto completo: [registro de progresso](PROGRESSO_MELHORIAS_CLEAR.md).
 - Avaliação estética de WinForms pelo usuário é a próxima decisão de produto. Não migrar para WPF automaticamente.
 
+## Entrega integrada
+
+PR #21 integrado: https://github.com/leucimar/TCC-Software-CLEAR/pull/21. Merge de código `bbfc074`; a documentação de fechamento foi atualizada em um commit posterior na develop. Compilação Release concluída no repositório original. A comparação local/remoto deve resultar `0 0`, com árvore limpa.
+
 ## Conferência ao retomar
 
 ```powershell

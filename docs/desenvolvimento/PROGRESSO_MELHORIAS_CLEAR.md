@@ -15,7 +15,7 @@ Correções do relatório inicial, redesenho WinForms com temas, preservação d
 - [concluído] Interface WinForms reorganizada, temas claro/escuro persistentes e cabeçalhos/barras adaptáveis.
 - [concluído] 253 testes aprovados, 28 verificações no laboratório, 467 hashes sem divergência.
 - [concluído] Conferência visual de análise, abas, temas, histórico/auditoria, seleção, recusa e amostragem. Limites documentados no relatório.
-- [em finalização] Commit complementar, integração da feature na develop, atualização do repositório original e compilação Release para continuidade.
+- [concluído] Commits f344cde e 5673a01 integrados à develop pelo PR #21 (merge bbfc074). Ambas as cópias atualizadas; compilação Release aprovada no repositório original.
 
 ## Arquivos essenciais
 
@@ -36,3 +36,7 @@ Windows Server não foi testado em instalação real. Não declarar benchmark ci
 ## Última conferência visual
 
 A execução no novo layout concluiu com 467 arquivos, 43 pastas e 16 grupos/111 membros. O cancelamento foi acionado após a conclusão, portanto não comprovou interrupção. Prévia existente foi bloqueada; destino novo produziu 140 arquivos/8.240.522 bytes/24 estratos. Consulta histórica exibiu as três linhas do cabeçalho após ajuste. No teste anterior, auditoria mostrou 200+200+67 e Enter recusou a confirmação de movimentação. O usuário foi liberado para usar o PC após os testes.
+
+## Fechamento da entrega
+
+A atualização documental final é publicada na develop após o merge. O repositório original deve permanecer em develop, limpo e sem divergência com origin/develop. Usar `RETOMADA_CLEAR.md` e o relatório comparativo para a próxima sessão; não repetir todas as análises do zero. Pendências são as explicitamente listadas no relatório, não uma implementação interrompida da feature. O usuário pode continuar a avaliação estética e o desenvolvimento pelo repositório original.

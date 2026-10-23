@@ -8,7 +8,7 @@ As falhas comprovadas de apresentação de duplicatas, exportação de achados, 
 
 A regressão completa terminou com **253 testes aprovados: 87 de domínio, 67 de aplicação e 99 de infraestrutura**. As **28 verificações complementares no laboratório passaram**. A conferência final encontrou **467 arquivos presentes e 467 hashes SHA-256 correspondentes ao gabarito**, sem divergências de conteúdo.
 
-O resultado está preparado para integração na `develop`. A avaliação estética definitiva pertence ao usuário. A execução em Windows Server, a acessibilidade e a validação científica de desempenho continuam exigindo trabalhos específicos; não são declaradas aprovadas por esta rodada.
+O resultado foi integrado na `develop` pelo PR #21, merge `bbfc074b27b5546b2ed4bf2b3e51ed81bf37463f`. O repositório original e a cópia isolada foram atualizados por avanço direto; a compilação Release também foi aprovada no repositório original. A avaliação estética definitiva pertence ao usuário. A execução em Windows Server, a acessibilidade e a validação científica de desempenho continuam exigindo trabalhos específicos; não são declaradas aprovadas por esta rodada.
 
 ## Referências e alcance
 
@@ -93,3 +93,7 @@ Essas pendências são discriminadas para evitar uma declaração artificial de 
 Leia [RETOMADA_CLEAR.md](../desenvolvimento/RETOMADA_CLEAR.md) e o registro [PROGRESSO_MELHORIAS_CLEAR.md](../desenvolvimento/PROGRESSO_MELHORIAS_CLEAR.md). O repositório original deve ser aberto na branch `develop`, após conferir sua sincronização. O executável fica em `src\Clear.Desktop\bin\Release\net10.0-windows\Clear.Desktop.exe` depois da compilação Release.
 
 Os bancos locais de histórico e auditoria permanecem em `%LOCALAPPDATA%\CLEAR`; não são parte do repositório. A preferência de tema fica em `%LOCALAPPDATA%\CLEAR\preferencias-interface.json`. Não substituir esses bancos ao transportar código. O acervo e o gabarito são externos e devem ser preservados.
+
+## Registro de entrega
+
+Integração: https://github.com/leucimar/TCC-Software-CLEAR/pull/21. O código integrado corresponde ao merge `bbfc074`; a atualização documental final é posterior a esse merge na própria develop. No fechamento da entrega, conferir o SHA corrente da develop contra origin/develop; a divergência deve ser `0 0` e a árvore deve estar limpa. A mesma conferência foi utilizada nas duas cópias locais.
