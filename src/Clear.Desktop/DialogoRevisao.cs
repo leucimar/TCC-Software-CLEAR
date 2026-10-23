@@ -1,4 +1,4 @@
-namespace Clear.Desktop;
+﻿namespace Clear.Desktop;
 
 /// <summary>Confirmação explícita com conteúdo rolável e recusa como ação padrão.</summary>
 internal sealed class DialogoRevisao : Form
@@ -38,6 +38,7 @@ internal sealed class DialogoRevisao : Form
         Controls.Add(painel);
         AcceptButton = cancelar;
         CancelButton = cancelar;
+        Shown += (_, _) => cancelar.Focus();
         TemaVisual.Registrar(this);
     }
 }

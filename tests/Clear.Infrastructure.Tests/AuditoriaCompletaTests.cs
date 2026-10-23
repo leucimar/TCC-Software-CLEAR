@@ -28,6 +28,8 @@ public sealed class AuditoriaCompletaTests
                     """;
                 await cmd.ExecuteNonQueryAsync();
             }
+            Assert.AreEqual(467L, await ServicoQuarentenaM7.ContarAuditoriaAsync(banco, "exec"));
+            Assert.AreEqual(0L, await ServicoQuarentenaM7.ContarAuditoriaAsync(banco, "outra"));
             var paginas = new List<RegistroQuarentenaM7>();
             for (var i = 0; i < 3; i++)
                 paginas.AddRange(await ServicoQuarentenaM7.ConsultarAsync(banco, "exec", pagina: i));

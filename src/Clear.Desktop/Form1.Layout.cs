@@ -13,7 +13,7 @@ public partial class Form1
             ColumnCount = 1, RowCount = 5, Padding = new Padding(16) };
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
         principal.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        principal.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         principal.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         var cabecalho = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2,
@@ -52,6 +52,10 @@ public partial class Form1
         principal.Controls.Add(origem, 0, 1);
         _resumo.Text = "Selecione uma pasta e configure sua análise. Os arquivos são preservados durante a leitura.";
         _resumo.Padding = new Padding(10);
+        _resumo.AutoSize = true;
+        _resumo.MinimumSize = new Size(0, 48);
+        principal.ClientSizeChanged += (_, _) =>
+            _resumo.MaximumSize = new Size(Math.Max(100, principal.ClientSize.Width - 40), 0);
         principal.Controls.Add(_resumo, 0, 2);
 
         var conteudo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
@@ -196,6 +200,11 @@ public partial class Form1
 
     private static void Adicionar(TableLayoutPanel painel, Control controle)
     {
+        if (controle is Label rotulo && rotulo.Font.Size <= 10)
+        {
+            rotulo.AutoSize = true;
+            rotulo.MinimumSize = new Size(0, controle.Height);
+        }
         controle.Dock = DockStyle.Fill;
         controle.Margin = new Padding(4, 5, 4, 5);
         painel.RowStyles.Add(new RowStyle(SizeType.AutoSize));

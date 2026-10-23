@@ -258,6 +258,23 @@ public static class ServicoQuarentenaM7
         return itens.AsReadOnly();
     }
 
+    public static async Task<long> ContarAuditoriaAsync(string bancoAuditoria,
+        string idExecucao, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
+        if (!File.Exists(bancoAuditoria)) return 0;
+        await using var conexao = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = Path.GetFullPath(bancoAuditoria), Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false }.ToString());
+        await conexao.OpenAsync(ct).ConfigureAwait(false);
+        await ValidarVersaoAsync(conexao, ct).ConfigureAwait(false);
+        await using var comando = conexao.CreateCommand();
+        comando.CommandText = "SELECT COUNT(*) FROM movimentacoes WHERE execucao_id = $exec";
+        comando.Parameters.AddWithValue("$exec", idExecucao);
+        return Convert.ToInt64(await comando.ExecuteScalarAsync(ct).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Exporta toda a auditoria da execução em fluxo, sem o limite da página visual.</summary>
     public static async Task<long> ExportarAuditoriaCsvAsync(string bancoAuditoria,
         string idExecucao, string destino, CancellationToken ct = default)

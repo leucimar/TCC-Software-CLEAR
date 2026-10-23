@@ -33,9 +33,9 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly CheckBox _filtrarData = new()
         { Text = "Último acesso entre datas", AutoSize = true };
     private readonly DateTimePicker _desde = new()
-        { Format = DateTimePickerFormat.Short, Width = 110 };
+        { Format = DateTimePickerFormat.Short, Width = 165 };
     private readonly DateTimePicker _ate = new()
-        { Format = DateTimePickerFormat.Short, Width = 110 };
+        { Format = DateTimePickerFormat.Short, Width = 165 };
     private readonly TextBox _trecho = new()
         { Width = 170, PlaceholderText = "Pasta ou nome" };
     private readonly Button _buscar = new() { Text = "Aplicar filtros", AutoSize = true };

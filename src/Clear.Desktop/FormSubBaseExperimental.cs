@@ -52,12 +52,12 @@ public sealed class FormSubBaseExperimental : Form
             Dock = DockStyle.Fill, Padding = new Padding(14),
             ColumnCount = 3, RowCount = 7
         };
-        painel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+        painel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         painel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        painel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        painel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         for (var i = 0; i < 4; i++)
-            painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
-        painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
+            painel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        painel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         painel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         painel.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 

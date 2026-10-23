@@ -86,11 +86,11 @@ public sealed class FormDetalhesHistoricoM6 : Form
             Dock = DockStyle.Fill, Padding = new Padding(8),
             RowCount = 2, ColumnCount = 1
         };
-        raiz.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
+        raiz.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         raiz.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         raiz.Controls.Add(new Label
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 0, 0, 12),
             Text = $"Análise salva em {execucao.InicioUtc:dd/MM/yyyy HH:mm} UTC | " +
                    $"Estado: {execucao.Estado} | Entradas: {_totalEntradas:N0} | " +
                    $"Grupos: {execucao.GruposDuplicatas:N0}" + Environment.NewLine +
@@ -372,8 +372,10 @@ public sealed class FormDetalhesHistoricoM6 : Form
             { _paginaAuditoria = 0; lista = await ServicoQuarentenaM7.ConsultarAsync(
                 ServicoQuarentenaM7.BancoAuditoriaPadrao, _id); }
             _anteriorAuditoria.Enabled = _paginaAuditoria > 0;
-            _proximaAuditoria.Enabled = lista.Count == 200;
-            _infoAuditoria.Text = $"Página {_paginaAuditoria + 1} • {lista.Count} registros";
+            var total = await ServicoQuarentenaM7.ContarAuditoriaAsync(
+                ServicoQuarentenaM7.BancoAuditoriaPadrao, _id);
+            _proximaAuditoria.Enabled = ((long)_paginaAuditoria + 1) * 200 < total;
+            _infoAuditoria.Text = $"Página {_paginaAuditoria + 1}/{Math.Max(1, (total + 199) / 200)} • {lista.Count} de {total:N0} registros";
             _auditoriaQuarentena.DataSource = lista.ToList();
         }
         catch (Exception ex)

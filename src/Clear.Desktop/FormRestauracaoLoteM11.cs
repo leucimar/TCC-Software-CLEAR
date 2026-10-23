@@ -94,7 +94,7 @@ public sealed class FormRestauracaoLoteM11 : Form
         _grade.Columns.Add("Id", "ID da operação");
         _grade.Columns["Id"]!.Visible = false;
         _grade.Columns["Marcar"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-        _grade.Columns["Marcar"]!.Width = 85;
+        _grade.Columns["Marcar"]!.Width = 125;
         _grade.Columns["Original"]!.FillWeight = 60;
         _grade.Columns["Destino"]!.FillWeight = 35;
         _grade.Columns["Tamanho"]!.FillWeight = 12;
