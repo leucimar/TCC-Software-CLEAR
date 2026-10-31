@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using Clear.Infrastructure.Historico;
 using Microsoft.Data.Sqlite;
@@ -227,8 +227,9 @@ public static class ServicoQuarentenaM7
 
     public static async Task<IReadOnlyList<RegistroQuarentenaM7>> ConsultarAsync(
         string bancoAuditoria, string? idExecucao = null,
-        CancellationToken cancelamento = default)
+        CancellationToken cancelamento = default, int pagina = 0)
     {
+        if (pagina < 0) throw new ArgumentOutOfRangeException(nameof(pagina));
         if (!File.Exists(bancoAuditoria))
             return Array.Empty<RegistroQuarentenaM7>();
         await using var conexao = new SqliteConnection(new SqliteConnectionStringBuilder
@@ -243,9 +244,10 @@ public static class ServicoQuarentenaM7
             SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem
             FROM movimentacoes
             WHERE ($execucao IS NULL OR execucao_id = $execucao)
-            ORDER BY criado_utc DESC LIMIT 100;
+            ORDER BY criado_utc DESC, id LIMIT 200 OFFSET $offset;
             """;
         comando.Parameters.AddWithValue("$execucao", (object?)idExecucao ?? DBNull.Value);
+        comando.Parameters.AddWithValue("$offset", checked((long)pagina * 200));
         var itens = new List<RegistroQuarentenaM7>();
         await using var leitor = await comando.ExecuteReaderAsync(cancelamento).ConfigureAwait(false);
         while (await leitor.ReadAsync(cancelamento).ConfigureAwait(false))
@@ -254,6 +256,69 @@ public static class ServicoQuarentenaM7
                 leitor.GetString(3), leitor.GetInt64(4), leitor.GetString(5),
                 leitor.GetString(6), leitor.IsDBNull(7) ? null : leitor.GetString(7)));
         return itens.AsReadOnly();
+    }
+
+    public static async Task<long> ContarAuditoriaAsync(string bancoAuditoria,
+        string idExecucao, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
+        if (!File.Exists(bancoAuditoria)) return 0;
+        await using var conexao = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = Path.GetFullPath(bancoAuditoria), Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false }.ToString());
+        await conexao.OpenAsync(ct).ConfigureAwait(false);
+        await ValidarVersaoAsync(conexao, ct).ConfigureAwait(false);
+        await using var comando = conexao.CreateCommand();
+        comando.CommandText = "SELECT COUNT(*) FROM movimentacoes WHERE execucao_id = $exec";
+        comando.Parameters.AddWithValue("$exec", idExecucao);
+        return Convert.ToInt64(await comando.ExecuteScalarAsync(ct).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Exporta toda a auditoria da execução em fluxo, sem o limite da página visual.</summary>
+    public static async Task<long> ExportarAuditoriaCsvAsync(string bancoAuditoria,
+        string idExecucao, string destino, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
+        ct.ThrowIfCancellationRequested();
+        var final = Path.GetFullPath(destino);
+        if (File.Exists(final)) throw new IOException("O arquivo de destino já existe.");
+        var temporario = final + "." + Guid.NewGuid().ToString("N") + ".part";
+        try
+        {
+            await using var conexao = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.GetFullPath(bancoAuditoria), Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false }.ToString());
+            await conexao.OpenAsync(ct).ConfigureAwait(false);
+            await ValidarVersaoAsync(conexao, ct).ConfigureAwait(false);
+            await using var cmd = conexao.CreateCommand();
+            cmd.CommandText = """
+                SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem,
+                       criado_utc FROM movimentacoes WHERE execucao_id = $exec
+                ORDER BY criado_utc, id;
+                """;
+            cmd.Parameters.AddWithValue("$exec", idExecucao);
+            long total = 0;
+            await using (var leitor = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+            await using (var escritor = new StreamWriter(new FileStream(temporario,
+                FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true),
+                new System.Text.UTF8Encoding(true)))
+            {
+                await escritor.WriteLineAsync("Id;Estado;Original;Destino;TamanhoBytes;SHA256;Execucao;Mensagem;CriadoUtc".AsMemory(), ct);
+                while (await leitor.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var valores = Enumerable.Range(0, 9).Select(i => leitor.IsDBNull(i) ? "" :
+                        Convert.ToString(leitor.GetValue(i), CultureInfo.InvariantCulture));
+                    await escritor.WriteLineAsync(Relatorios.ExportadorRelatoriosM5.LinhaCsv(valores).AsMemory(), ct);
+                    total++;
+                }
+                await escritor.FlushAsync(ct);
+            }
+            ct.ThrowIfCancellationRequested();
+            File.Move(temporario, final);
+            return total;
+        }
+        finally { if (File.Exists(temporario)) File.Delete(temporario); }
     }
 
     private static async Task<string> CalcularShaEstavelAsync(

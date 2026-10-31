@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Clear.Application.Progresso;
 using Clear.Infrastructure.Quarentena;
 
@@ -66,11 +66,11 @@ public sealed class FormRestauracaoLoteM11 : Form
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill,
             RowCount = 4, ColumnCount = 1, Padding = new Padding(8) };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
-        var linhaFiltros = new FlowLayoutPanel { Dock = DockStyle.Fill,
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
+        var linhaFiltros = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill,
             AutoScroll = true, WrapContents = true };
         foreach (Control campo in new Control[] {
             new Label { Text = "Extensão:", AutoSize = true }, _extensao,
@@ -79,7 +79,7 @@ public sealed class FormRestauracaoLoteM11 : Form
             _usarMax, _maxMiB, _filtrar
         }) linhaFiltros.Controls.Add(campo);
         layout.Controls.Add(linhaFiltros, 0, 0);
-        var barra = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        var barra = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         foreach (Control botao in new Control[] {
             _anterior, _proxima, _selecionarPagina, _selecionarTodos,
             _limpar, _restaurar, _cancelar
@@ -94,7 +94,7 @@ public sealed class FormRestauracaoLoteM11 : Form
         _grade.Columns.Add("Id", "ID da operação");
         _grade.Columns["Id"]!.Visible = false;
         _grade.Columns["Marcar"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-        _grade.Columns["Marcar"]!.Width = 85;
+        _grade.Columns["Marcar"]!.Width = 125;
         _grade.Columns["Original"]!.FillWeight = 60;
         _grade.Columns["Destino"]!.FillWeight = 35;
         _grade.Columns["Tamanho"]!.FillWeight = 12;
@@ -181,6 +181,7 @@ public sealed class FormRestauracaoLoteM11 : Form
         };
         _restaurar.Click += async (_, _) => await RestaurarSelecionadosAsync();
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
+        TemaVisual.Registrar(this);
         Shown += async (_, _) => await CarregarAsync(0);
         FormClosing += (_, e) =>
         {
@@ -282,14 +283,13 @@ public sealed class FormRestauracaoLoteM11 : Form
         var bytes = selecionados.Aggregate(0L,
             (acc, x) => checked(acc + x.TamanhoBytes));
         var resumo = string.Join(Environment.NewLine,
-            selecionados.Take(8).Select(x => "  • " + x.CaminhoOriginal));
-        var resposta = MessageBox.Show(this,
+            selecionados.Select(x => "  • " + x.CaminhoOriginal));
+        var resposta = DialogoRevisao.Confirmar(this,
             $"RESTAURAR {selecionados.Count:N0} ARQUIVOS EXPLICITAMENTE MARCADOS?" +
             Environment.NewLine + $"Bytes: {bytes:N0} | Execução: {_idExecucao}" +
-            Environment.NewLine + "Primeiros caminhos originais:" +
+            Environment.NewLine + "Todos os caminhos originais selecionados:" +
             Environment.NewLine + resumo +
-            (selecionados.Count > 8 ? Environment.NewLine +
-                $"... e mais {selecionados.Count - 8:N0}" : "") +
+
             Environment.NewLine + Environment.NewLine +
             "Cada arquivo será verificado com SHA-256, seu destino original " +
             "deverá estar livre e nenhum arquivo será sobrescrito. " +

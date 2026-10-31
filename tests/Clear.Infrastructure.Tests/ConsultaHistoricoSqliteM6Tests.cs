@@ -1,4 +1,4 @@
-using Clear.Application.Inventario;
+﻿using Clear.Application.Inventario;
 using Clear.Domain.Arquivos;
 using Clear.Domain.Duplicatas;
 using Clear.Domain.Inventario;
@@ -38,6 +38,16 @@ public sealed class ConsultaHistoricoSqliteM6Tests
         Assert.HasCount(0, p4);
         Assert.AreNotEqual(p1[0].Caminho, p2[0].Caminho);
         Assert.AreEqual(405, p1.Count + p2.Count + p3.Count);
+        var bloqueados = arquivos.Take(205).Select(a => a.CaminhoCompleto)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var disponiveis = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            pasta.Banco, id, new FiltrosEntradasM10(), 0, caminhosIndisponiveis: bloqueados);
+        Assert.AreEqual(200L, disponiveis.Total);
+        Assert.HasCount(200, disponiveis.Entradas);
+        Assert.IsFalse(disponiveis.Entradas.Any(e => bloqueados.Contains(e.Caminho)));
+        var fim = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            pasta.Banco, id, new FiltrosEntradasM10(), 1, caminhosIndisponiveis: bloqueados);
+        Assert.HasCount(0, fim.Entradas);
     }
 
     [TestMethod]
@@ -86,6 +96,8 @@ public sealed class ConsultaHistoricoSqliteM6Tests
             await sessao.ConcluirAsync(inv, dup);
         }
 
+        var entradas = await ConsultaHistoricoSqliteM6.ConsultarEntradasAsync(pasta.Banco, id, 0);
+        Assert.IsTrue(entradas.All(e => e.EhDuplicataExata));
         var grupos = await ConsultaHistoricoSqliteM6.ConsultarDuplicatasAsync(pasta.Banco, id);
         Assert.HasCount(2, grupos);
         Assert.AreEqual(1L, grupos[0].Grupo);

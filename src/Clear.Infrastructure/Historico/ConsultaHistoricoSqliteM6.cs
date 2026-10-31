@@ -35,8 +35,10 @@ public static class ConsultaHistoricoSqliteM6
         comando.CommandText = """
             SELECT id, tipo, caminho, tamanho_bytes, modificado_utc,
                    categorias_json, evidencias_json, verificacoes_json,
-                   acima_limite_pessoal, acessado_utc
-            FROM entradas WHERE execucao_id = $id
+                   acima_limite_pessoal, acessado_utc,
+                   EXISTS (SELECT 1 FROM membros_duplicatas m
+                           WHERE m.execucao_id = e.execucao_id AND m.caminho = e.caminho)
+            FROM entradas e WHERE execucao_id = $id
             ORDER BY id LIMIT $limite OFFSET $offset;
             """;
         comando.Parameters.AddWithValue("$id", idExecucao);
@@ -52,7 +54,7 @@ public static class ConsultaHistoricoSqliteM6
                 leitor.IsDBNull(3) ? null : leitor.GetInt64(3),
                 leitor.IsDBNull(4) ? null : leitor.GetString(4),
                 leitor.GetString(5), leitor.GetString(6), leitor.GetString(7),
-                leitor.GetInt64(8) == 1, false,
+                leitor.GetInt64(8) == 1, leitor.GetInt64(10) == 1,
                 leitor.IsDBNull(9) ? null : leitor.GetString(9)));
         }
         return result.AsReadOnly();

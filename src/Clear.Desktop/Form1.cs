@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Clear.Application.Inventario;
 using Clear.Application.Progresso;
 using Clear.Application.Compatibilidade;
@@ -170,256 +170,19 @@ public partial class Form1 : Form
     public Form1()
     {
         InitializeComponent();
+        Font = new Font("Segoe UI", 10);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleDimensions = new SizeF(96, 96);
         MontarInterface();
+        PerformAutoScale();
+        var area = Screen.FromControl(this).WorkingArea;
+        MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height));
+        Size = new Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height));
     }
 
     private void MontarInterface()
     {
-        Text = "CLEAR — Inventário, duplicatas, relatórios e histórico (M6)";
-        MinimumSize = new Size(1190, 760);
-        Size = new Size(1500, 930);
-
-        var principal = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 7,
-            Padding = new Padding(12)
-        };
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 233));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-        principal.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
-        principal.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-
-        var topo = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3 };
-        topo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
-        topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
-        topo.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95));
-        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
-        topo.RowStyles.Add(new RowStyle(SizeType.Absolute, 63));
-        var mensagem = new Label
-        {
-            Text = "Análise somente leitura. Duplicatas usam leitura de conteúdo; nada é movido, modificado ou excluído.",
-            Dock = DockStyle.Fill, AutoSize = true
-        };
-        topo.Controls.Add(mensagem, 0, 0);
-        topo.SetColumnSpan(mensagem, 4);
-        topo.Controls.Add(_caminho, 0, 1);
-        topo.Controls.Add(_selecionar, 1, 1);
-        topo.Controls.Add(_iniciar, 2, 1);
-        topo.Controls.Add(_cancelar, 3, 1);
-        var locais = new FlowLayoutPanel { Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-        locais.Controls.Add(new Label { Text = "Quarentena:", AutoSize = true });
-        locais.Controls.Add(_pastaQuarentena);
-        locais.Controls.Add(_escolherQuarentena);
-        locais.Controls.Add(new Label { Text = "Relatórios:", AutoSize = true });
-        locais.Controls.Add(_pastaRelatorios);
-        locais.Controls.Add(_escolherRelatorios);
-        topo.Controls.Add(locais, 0, 2);
-        topo.SetColumnSpan(locais, 4);
-
-
-        // O ambiente escolhido é exclusivo. Os filtros continuam visíveis,
-        // mas as regras do ambiente não selecionado não podem ser habilitadas.
-        var grupoDestino = new GroupBox
-            { Text = "Ambiente foco — ao selecionar, o CLEAR sugere as verificações daquele destino", Dock = DockStyle.Fill };
-        var radios = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true, Padding = new Padding(8, 6, 8, 0)
-        };
-        radios.Controls.Add(_semDestino);
-        radios.Controls.Add(_azure);
-        radios.Controls.Add(_sharePoint);
-        var subtipoLinha = new FlowLayoutPanel
-            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
-        subtipoLinha.Controls.Add(new Label
-            { Text = "Subtipo empresarial:", AutoSize = true, Padding = new Padding(0, 5, 0, 0) });
-        _subtipo.Items.AddRange(new object[] { "SharePoint Online", "OneDrive for Business" });
-        _subtipo.SelectedIndex = 0;
-        subtipoLinha.Controls.Add(_subtipo);
-        radios.Controls.Add(subtipoLinha);
-        grupoDestino.Controls.Add(radios);
-
-        var painelFiltros = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
-            Padding = new Padding(0)
-        };
-        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 520));
-        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
-        painelFiltros.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-        var grupoGeral = new GroupBox
-            { Text = "Filtros gerais — independentes do ambiente", Dock = DockStyle.Fill };
-        var filtrosGerais = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-            WrapContents = false, AutoScroll = true,
-            Padding = new Padding(8, 5, 8, 0)
-        };
-        filtrosGerais.Controls.Add(_identificarVazios);
-        filtrosGerais.Controls.Add(_identificarTemporarios);
-
-        var linhaTemporal = new FlowLayoutPanel
-            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-        linhaTemporal.Controls.Add(_ativarSinalTemporal);
-        linhaTemporal.Controls.Add(_dias);
-        linhaTemporal.Controls.Add(new Label
-            { Text = "dias", AutoSize = true, Padding = new Padding(0, 5, 0, 0) });
-        filtrosGerais.Controls.Add(linhaTemporal);
-
-        var linhaTamanho = new FlowLayoutPanel
-            { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-        linhaTamanho.Controls.Add(_ativarTamanho);
-        linhaTamanho.Controls.Add(_limite);
-        _unidade.Items.AddRange(new object[] { "B", "KiB", "MiB", "GiB", "TiB" });
-        _unidade.SelectedIndex = 3;
-        linhaTamanho.Controls.Add(_unidade);
-        filtrosGerais.Controls.Add(linhaTamanho);
-        filtrosGerais.Controls.Add(_ativarDuplicatas);
-        var linhaConcorrencia = new FlowLayoutPanel
-            { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
-        linhaConcorrencia.Controls.Add(new Label
-            { Text = "Leituras SHA-256 simultâneas (M9):", AutoSize = true,
-              Padding = new Padding(0, 5, 0, 0) });
-        linhaConcorrencia.Controls.Add(_maximoHashes);
-        filtrosGerais.Controls.Add(linhaConcorrencia);
-        var linhaMemoria = new FlowLayoutPanel
-            { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
-        linhaMemoria.Controls.Add(new Label
-            { Text = "Máximo de arquivos indexados em RAM (M9):", AutoSize = true,
-              Padding = new Padding(0, 5, 0, 0) });
-        linhaMemoria.Controls.Add(_limiteIndexacao);
-        filtrosGerais.Controls.Add(linhaMemoria);
-
-        var linhaRelatorio = new FlowLayoutPanel
-        {
-            AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false
-        };
-        linhaRelatorio.Controls.Add(_exportarRelatorio);
-        filtrosGerais.Controls.Add(linhaRelatorio);
-
-        var linhaFiltroRelatorio = new FlowLayoutPanel
-        {
-            AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false
-        };
-        linhaFiltroRelatorio.Controls.Add(new Label
-        {
-            Text = "Linhas CSV:", AutoSize = true, Padding = new Padding(0, 5, 0, 0)
-        });
-        _filtroRelatorio.Items.AddRange(new object[]
-        {
-            "Todas as entradas",
-            "Somente indícios gerais",
-            "Somente incompatibilidades",
-            "Somente tamanho pessoal",
-            "Somente achados (qualquer tipo)"
-        });
-        _filtroRelatorio.SelectedIndex = 0;
-        linhaFiltroRelatorio.Controls.Add(_filtroRelatorio);
-        filtrosGerais.Controls.Add(linhaFiltroRelatorio);
-        filtrosGerais.Controls.Add(_salvarHistorico);
-        filtrosGerais.Controls.Add(_salvarCheckpoint);
-        filtrosGerais.Controls.Add(_reiniciarInterrompida);
-        filtrosGerais.Controls.Add(_criarSubBase);
-        grupoGeral.Controls.Add(filtrosGerais);
-
-        foreach (var definicao in CatalogoVerificacoes.Definicoes)
-        {
-            var opcao = new CheckBox
-            {
-                Text = definicao.Rotulo + " [" + definicao.Codigo + "]",
-                AutoSize = true,
-                Checked = false
-            };
-            _dicas.SetToolTip(opcao,
-                "Referência documental: " + definicao.FonteDocumental +
-                ". Pode desmarcar após aplicar as sugestões.");
-            _checks.Add(definicao.Codigo, opcao);
-            if (definicao.Ambiente == AmbienteDestino.AzureFilesClassicoSmb)
-                _painelAzure.Controls.Add(opcao);
-            else
-                _painelSharePoint.Controls.Add(opcao);
-        }
-
-        _grupoAzure.Controls.Add(_painelAzure);
-        _grupoSharePoint.Controls.Add(_painelSharePoint);
-        painelFiltros.Controls.Add(grupoGeral, 0, 0);
-        painelFiltros.Controls.Add(_grupoAzure, 1, 0);
-        painelFiltros.Controls.Add(_grupoSharePoint, 2, 0);
-
-        _dicas.SetToolTip(_ativarDuplicatas,
-            "Leitura de conteúdo desativada por padrão. Ative expressamente para " +
-            "calcular SHA-256 e confirmar duplicatas byte a byte.");
-        _dicas.SetToolTip(_ativarTamanho,
-            "Filtro operacional: sinaliza arquivos maiores que o valor escolhido. " +
-            "Não substitui nem altera os limites oficiais dos destinos.");
-
-        _resumo.Text = "Nenhum inventário executado.";
-        _resumo.Padding = new Padding(0, 9, 0, 0);
-        _estado.Text = "Pronto. Selecione uma pasta sintética para analisar.";
-
-        var areaOcorrencias = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
-        areaOcorrencias.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-        areaOcorrencias.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        areaOcorrencias.Controls.Add(new Label
-        {
-            Text = "Ocorrências (falhas/links ignorados; até 100 detalhes)",
-            Dock = DockStyle.Fill
-        }, 0, 0);
-        areaOcorrencias.Controls.Add(_ocorrencias, 0, 1);
-
-        principal.Controls.Add(topo, 0, 0);
-        principal.Controls.Add(grupoDestino, 0, 1);
-        principal.Controls.Add(painelFiltros, 0, 2);
-        principal.Controls.Add(_resumo, 0, 3);
-        var abas = new TabControl { Dock = DockStyle.Fill };
-        var abaInventario = new TabPage("Inventário e compatibilidade");
-        var abaDuplicatas = new TabPage("Duplicatas exatas — M4");
-        abaInventario.Controls.Add(_grade);
-        var painelDuplicatas = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2
-        };
-        painelDuplicatas.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        painelDuplicatas.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        painelDuplicatas.Controls.Add(_resumoDuplicatas, 0, 0);
-        painelDuplicatas.Controls.Add(_gradeDuplicatas, 0, 1);
-        abaDuplicatas.Controls.Add(painelDuplicatas);
-        abas.TabPages.Add(abaInventario);
-        abas.TabPages.Add(abaDuplicatas);
-
-        var abaHistorico = new TabPage("Histórico SQLite — M6");
-        var painelHistorico = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3
-        };
-        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        painelHistorico.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-        var botoesHistorico = new FlowLayoutPanel { Dock = DockStyle.Fill };
-        botoesHistorico.Controls.Add(_atualizarHistorico);
-        botoesHistorico.Controls.Add(_consultarDetalhesHistorico);
-        painelHistorico.Controls.Add(botoesHistorico, 0, 0);
-        painelHistorico.Controls.Add(_gradeHistorico, 0, 1);
-        painelHistorico.Controls.Add(_infoHistorico, 0, 2);
-        abaHistorico.Controls.Add(painelHistorico);
-        abas.TabPages.Add(abaHistorico);
-        var abaMetricas = new TabPage("Métricas — M9");
-        abaMetricas.Controls.Add(_metricasM9);
-        abas.TabPages.Add(abaMetricas);
-
-        principal.Controls.Add(abas, 0, 4);
-        principal.Controls.Add(areaOcorrencias, 0, 5);
-        principal.Controls.Add(_estado, 0, 6);
-        Controls.Add(principal);
+        MontarApresentacao();
 
         _semDestino.CheckedChanged += (_, _) =>
         {
@@ -500,6 +263,7 @@ public partial class Form1 : Form
         };
         AplicarRecomendacoesDoDestino();
         AtualizarHabilitacao();
+        TemaVisual.Registrar(this);
     }
 
     private void AplicarRecomendacoesDoDestino()
@@ -966,38 +730,6 @@ public partial class Form1 : Form
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
             duracaoInventario = relogioInventario.Elapsed;
 
-            _grade.DataSource = resultado.AmostraAvaliacoes.Select(item =>
-            {
-                var arquivo = item.Entrada.Arquivo;
-                var gerais = arquivo is null ? "" :
-                    string.Join(", ", classificador.Classificar(arquivo).Categorias);
-                var relevantes = item.Verificacoes.Where(x => x.Estado is
-                    EstadoVerificacao.IncompatibilidadeDocumentada or
-                    EstadoVerificacao.Alerta or EstadoVerificacao.NaoAvaliado).ToArray();
-
-                return new
-                {
-                    Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
-                    Caminho = item.Entrada.CaminhoCompleto,
-                    Bytes = item.Entrada.TamanhoBytes,
-                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
-                    Compatibilidade = string.Join(" | ", relevantes.Select(x =>
-                        x.CodigoRegra + ": " + x.Estado)),
-                    Justificativas = string.Join(" | ", relevantes.Select(x =>
-                        x.CodigoRegra + ": " + x.Justificativa)),
-                    FiltroPersonalizado = item.AcimaDoLimitePersonalizado
-                        ? "Acima do limite pessoal" : "",
-                    SituacaoPreAnalise = arquivo is null ? "Pasta (não aplicável)" :
-                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
-                        !relevantes.Any(x => x.Estado is
-                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
-                            ? "Sem alertas detectados (não significa aprovado)"
-                            : "Com indícios ou alertas",
-                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
-                    ModificadoUtc = arquivo?.UltimaModificacaoUtc
-                };
-            }).ToList();
-
             foreach (var item in resultado.Ocorrencias)
                 _ocorrencias.Items.Add($"{item.Tipo}: {item.Caminho} — {item.Descricao}");
 
@@ -1087,6 +819,45 @@ public partial class Form1 : Form
                     : "M4 concluído: SHA-256 e confirmação byte a byte. Nenhum arquivo alterado.";
             }
 
+            var caminhosDuplicados = resultadoDuplicatas?.Grupos.SelectMany(g => g.Arquivos)
+                .Select(a => a.CaminhoCompleto).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _grade.DataSource = resultado.AmostraAvaliacoes.Select(item =>
+            {
+                var arquivo = item.Entrada.Arquivo;
+                var gerais = arquivo is null ? "" :
+                    string.Join(", ", classificador.Classificar(arquivo).Categorias);
+                var relevantes = item.Verificacoes.Where(x => x.Estado is
+                    EstadoVerificacao.IncompatibilidadeDocumentada or
+                    EstadoVerificacao.Alerta or EstadoVerificacao.NaoAvaliado).ToArray();
+
+                return new
+                {
+                    Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
+                    Caminho = item.Entrada.CaminhoCompleto,
+                    Bytes = item.Entrada.TamanhoBytes,
+                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
+                    Compatibilidade = string.Join(" | ", relevantes.Select(x =>
+                        x.CodigoRegra + ": " + x.Estado)),
+                    Justificativas = string.Join(" | ", relevantes.Select(x =>
+                        x.CodigoRegra + ": " + x.Justificativa)),
+                    FiltroPersonalizado = item.AcimaDoLimitePersonalizado
+                        ? "Acima do limite pessoal" : "",
+                    DuplicataExata = caminhosDuplicados.Contains(item.Entrada.CaminhoCompleto),
+                    SituacaoPreAnalise = arquivo is null && !relevantes.Any(x => x.Estado is
+                        EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
+                        ? "Pasta (não aplicável)" :
+                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
+                        !caminhosDuplicados.Contains(item.Entrada.CaminhoCompleto) &&
+                        !relevantes.Any(x => x.Estado is
+                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
+                            ? "Sem alertas detectados (não significa aprovado)"
+                            : "Com indícios ou alertas",
+                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
+                    ModificadoUtc = arquivo?.UltimaModificacaoUtc
+                };
+            }).ToList();
+
             if (exportador is not null)
             {
                 _estado.Text = "Finalizando relatório CSV e resumo JSON...";
@@ -1103,14 +874,6 @@ public partial class Form1 : Form
 
                 _estado.Text = $"M5 concluído: {arquivos.LinhasExportadas:N0} linha(s) CSV " +
                     "(amostra visual não limita o relatório). Arquivos originais inalterados.";
-                MessageBox.Show(this,
-                    "Relatório completo gerado:\n\n" +
-                    "Inventário: " + arquivos.InventarioCsv + "\n" +
-                    "Resumo: " + arquivos.ResumoJson +
-                    (arquivos.DuplicatasCsv is null ? "" :
-                        "\nDuplicatas: " + arquivos.DuplicatasCsv) +
-                    "\n\nOs caminhos exportados podem ser sensíveis. Guarde os relatórios com cuidado.",
-                    "CLEAR — Relatórios M5", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
             if (historico is not null)
@@ -1124,6 +887,12 @@ public partial class Form1 : Form
 
             checkpoint?.MarcarConcluida();
             cronometroTotal.Stop();
+            _estado.Text = (resultado.Incompleto || resultadoDuplicatas?.Incompleto == true
+                ? "Concluída com ocorrências • Consulte a aba Ocorrências."
+                : "Análise concluída • Arquivos preservados.") +
+                (exportador is not null ? " Relatórios em: " + _pastaRelatorios.Text : "") +
+                (historico is not null ? " • Histórico salvo." : "");
+            _dicas.SetToolTip(_estado, _estado.Text);
             double segundos = duracaoInventario.TotalSeconds;
             double taxaArquivos = segundos > 0 ? resultado.QuantidadeArquivos / segundos : 0;
             double taxaMiB = segundos > 0
