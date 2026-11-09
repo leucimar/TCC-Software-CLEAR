@@ -100,6 +100,20 @@ public sealed class FormDetalhesHistoricoM6 : Form
         }, 0, 0);
 
         var abas = new AbasTematicas { Dock = DockStyle.Fill };
+        var configuracao = new TabPage("Configuração e preservação");
+        static string FormatarJson(string? valor)
+        {
+            if (valor is null) return "Não registrado nesta execução histórica.";
+            try { using var json = JsonDocument.Parse(valor); return JsonSerializer.Serialize(json.RootElement, new JsonSerializerOptions { WriteIndented = true }); }
+            catch (JsonException) { return valor; }
+        }
+        configuracao.Controls.Add(new TextBox { Dock = DockStyle.Fill, ReadOnly = true,
+            Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false,
+            Text = "PARÂMETROS ORIGINAIS DA EXECUÇÃO" + Environment.NewLine + FormatarJson(execucao.ParametrosJson) +
+                Environment.NewLine + Environment.NewLine + "RESUMO / PRESERVAÇÃO DO ACESSO" + Environment.NewLine +
+                FormatarJson(execucao.ResumoJson) + Environment.NewLine +
+                "Campos ausentes em execuções anteriores não comprovam preservação. Nenhum registro antigo foi reinterpretado." });
+        abas.TabPages.Add(configuracao);
         var abaEntradas = new TabPage("Arquivos e classificações");
         var areaEntradas = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
         areaEntradas.RowStyles.Add(new RowStyle(SizeType.AutoSize));

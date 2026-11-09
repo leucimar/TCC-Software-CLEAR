@@ -6,7 +6,11 @@ using Clear.Domain.Duplicatas;
 namespace Clear.Application.Duplicatas;
 
 /// <summary>Progresso da fase de conteúdo; não é porcentagem de conclusão.</summary>
-public sealed record ProgressoDuplicatas(long CandidatosComHash, long ArquivosCandidatos);
+public sealed record ProgressoDuplicatas(long CandidatosComHash, long ArquivosCandidatos,
+    long? Processados = null, long Falhas = 0)
+{
+    public long CandidatosProcessados => Processados ?? CandidatosComHash + Falhas;
+}
 
 public sealed class ResultadoDuplicatas
 {
@@ -120,53 +124,63 @@ public sealed class DetectarDuplicatasExatas
         long arquivosComHash = 0;
         var grupos = new List<GrupoDuplicatasExatas>();
 
+        // Uma fila global: há somente até MaximoHashesSimultaneos workers,
+        // sem uma Task por arquivo ou barreiras entre tamanhos/lotes.
+        var fila = candidatos.SelectMany(f => f.Value
+            .OrderBy(x => x.CaminhoCompleto, StringComparer.OrdinalIgnoreCase)).ToArray();
+        var resultados = new (string? Hash, Exception? Erro)[fila.Length];
+        long concluidos = 0;
+        var travaProgresso = new object();
+        var relogioProgresso = System.Diagnostics.Stopwatch.StartNew();
+        await Parallel.ForEachAsync(Enumerable.Range(0, fila.Length),
+            new ParallelOptions { MaxDegreeOfParallelism = MaximoHashesSimultaneos,
+                CancellationToken = cancellationToken }, async (indice, ct) =>
+        {
+            try
+            {
+                resultados[indice] = (await _leitor.CalcularSha256Async(fila[indice], ct)
+                    .ConfigureAwait(false), null);
+            }
+            catch (Exception ex) when (Recuperavel(ex))
+            {
+                resultados[indice] = (null, ex);
+            }
+            lock (travaProgresso)
+            {
+                concluidos++;
+                if (resultados[indice].Erro is null) arquivosComHash++;
+                // Limitar notificações destinadas à UI sem perder o evento final.
+                if (concluidos == 1 || concluidos == totalCandidatos ||
+                    relogioProgresso.ElapsedMilliseconds >= 100)
+                {
+                    progresso?.Report(new ProgressoDuplicatas(arquivosComHash,
+                        totalCandidatos, concluidos, concluidos - arquivosComHash));
+                    relogioProgresso.Restart();
+                }
+            }
+        }).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (totalCandidatos == 0)
+            progresso?.Report(new ProgressoDuplicatas(0, 0, 0, 0));
+
+        // Consolidação sequencial determinística, independente da ordem de término.
+        var proximo = 0;
         foreach (var faixa in candidatos)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var porHash = new Dictionary<string, List<ArquivoInventariado>>(StringComparer.Ordinal);
-
-            // Lotes curtos limitam a quantidade de operações de leitura em voo
-            // e não exigem criar uma Task para todos os arquivos do acervo.
-            // Resultados são consolidados na ordem original para manter
-            // grupos/ocorrências determinísticos entre concorrências distintas.
-            var arquivosOrdenados = faixa.Value
-                .OrderBy(x => x.CaminhoCompleto, StringComparer.OrdinalIgnoreCase);
-            foreach (var lote in arquivosOrdenados.Chunk(MaximoHashesSimultaneos))
+            foreach (var arquivo in faixa.Value.OrderBy(x => x.CaminhoCompleto,
+                         StringComparer.OrdinalIgnoreCase))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var tarefas = lote.Select(async arquivo =>
+                var resultado = resultados[proximo++];
+                if (resultado.Erro is not null)
+                    Registrar(arquivo.CaminhoCompleto, "HashNaoCalculado", resultado.Erro);
+                else
                 {
-                    try
-                    {
-                        var sha = await _leitor.CalcularSha256Async(arquivo, cancellationToken)
-                            .ConfigureAwait(false);
-                        return (Arquivo: arquivo, Hash: sha, Erro: (Exception?)null);
-                    }
-                    catch (Exception ex) when (Recuperavel(ex))
-                    {
-                        return (Arquivo: arquivo, Hash: (string?)null, Erro: (Exception?)ex);
-                    }
-                }).ToArray();
-                var processados = await Task.WhenAll(tarefas).ConfigureAwait(false);
-                foreach (var item in processados)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (item.Erro is not null)
-                    {
-                        Registrar(item.Arquivo.CaminhoCompleto, "HashNaoCalculado", item.Erro);
-                    }
-                    else
-                    {
-                        arquivosComHash = checked(arquivosComHash + 1);
-                        var sha = item.Hash!;
-                        if (!porHash.TryGetValue(sha, out var lista))
-                        {
-                            lista = new List<ArquivoInventariado>();
-                            porHash.Add(sha, lista);
-                        }
-                        lista.Add(item.Arquivo);
-                    }
-                    progresso?.Report(new ProgressoDuplicatas(arquivosComHash, totalCandidatos));
+                    if (!porHash.TryGetValue(resultado.Hash!, out var lista))
+                        porHash.Add(resultado.Hash!, lista = new List<ArquivoInventariado>());
+                    lista.Add(arquivo);
                 }
             }
 

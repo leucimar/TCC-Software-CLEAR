@@ -123,6 +123,21 @@ public sealed class ServicoQuarentenaM7Tests
         Assert.IsFalse(File.Exists(c.Arquivo));
     }
 
+    [TestMethod]
+    public async Task QuarentenaEmOutroVolumeContinuaRecusada()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Validação de volumes Windows.");
+        using var c = new Cenario();
+        var outroVolume = Path.GetPathRoot(c.Origem)!.Equals("C:\\", StringComparison.OrdinalIgnoreCase)
+            ? "D:\\" : "C:\\";
+        var destino = Path.Combine(outroVolume, "CLEAR_NaoCriar_" + Guid.NewGuid().ToString("N"));
+        var erro = await Assert.ThrowsExactlyAsync<IOException>(() =>
+            ServicoQuarentenaM7.PrepararAsync(c.Entrada, c.Execucao, destino));
+        StringAssert.Contains(erro.Message, "mesmo volume");
+        Assert.IsTrue(File.Exists(c.Arquivo));
+        Assert.IsFalse(Directory.Exists(destino));
+    }
+
     private sealed class Cenario : IDisposable
     {
         private readonly string _base = Path.Combine(Path.GetTempPath(),

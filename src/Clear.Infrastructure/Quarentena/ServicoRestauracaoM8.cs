@@ -179,13 +179,8 @@ public static class ServicoRestauracaoM8
         // Share.Read | Share.Delete: permite leitura mas bloqueia escrita normal
         // durante a conferência. Há janela TOCTOU entre esta leitura e File.Move.
         var antesUtc = info.LastWriteTimeUtc;
-        await using var fluxo = new FileStream(fonte, new FileStreamOptions
-        {
-            Mode = FileMode.Open, Access = FileAccess.Read,
-            Share = FileShare.Read | FileShare.Delete,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
-            BufferSize = 65536
-        });
+        await using var fluxo = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(
+            fonte, FileShare.Read | FileShare.Delete);
         if (fluxo.Length != plano.TamanhoBytes)
             throw new IOException("Tamanho alterado durante verificação.");
         var hash = Convert.ToHexString(

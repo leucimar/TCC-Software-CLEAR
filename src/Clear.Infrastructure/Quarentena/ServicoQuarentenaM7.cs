@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using Clear.Infrastructure.Historico;
 using Microsoft.Data.Sqlite;
@@ -329,12 +329,8 @@ public static class ServicoQuarentenaM7
         // Permitir renomeação no mesmo volume enquanto handle está aberto,
         // mas bloquear escrita durante SHA. O movimento não é prova de cópia
         // para outra unidade e não substitui avaliação de permissões/hardlinks.
-        await using var fluxo = new FileStream(caminho, new FileStreamOptions
-        {
-            Mode = FileMode.Open, Access = FileAccess.Read,
-            Share = FileShare.Read | FileShare.Delete,
-            BufferSize = 65536, Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
+        await using var fluxo = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(
+            caminho, FileShare.Read | FileShare.Delete);
         if (fluxo.Length != esperado)
             throw new IOException("O tamanho do arquivo mudou desde a análise.");
         var bytes = await SHA256.HashDataAsync(fluxo, cancelamento).ConfigureAwait(false);

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Clear.Application.Duplicatas;
@@ -160,7 +160,9 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
         ResultadoInventario inventario, ResultadoDuplicatas? duplicatas,
         IReadOnlyList<string> filtrosGeraisAtivos,
         int? diasTemporais, DateTimeOffset? referenciaTemporalUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CriterioTemporal criterioTemporal = CriterioTemporal.UltimoAcesso,
+        Clear.Domain.Arquivos.ResumoPreservacaoAcesso? preservacao = null)
     {
         ArgumentNullException.ThrowIfNull(inventario);
         ArgumentNullException.ThrowIfNull(filtrosGeraisAtivos);
@@ -253,7 +255,8 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
                 FiltroLinhas = _filtro.ToString(),
                 FiltrosGeraisAtivos = filtrosGeraisAtivos.ToArray(),
                 DiasTemporais = diasTemporais,
-                CriterioTemporal = "UltimoAcessoUtc (metadado não garantido pelo sistema operacional)",
+                CriterioTemporal = diasTemporais is null ? "Desativado" : criterioTemporal.ToString() + "Utc",
+                PreservacaoAcesso = preservacao,
                 ReferenciaTemporalUtc = referenciaTemporalUtc,
                 LinhasExportadas = _linhasExportadas,
                 Aviso = "Resultados de pre-analise. Nao autoriza descarte nem garante migracao.",

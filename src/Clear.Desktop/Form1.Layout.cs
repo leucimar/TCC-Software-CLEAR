@@ -1,4 +1,4 @@
-﻿using Clear.Domain.Compatibilidade;
+using Clear.Domain.Compatibilidade;
 
 namespace Clear.Desktop;
 
@@ -50,7 +50,7 @@ public partial class Form1
         origem.Controls.Add(_iniciar, 2, 0);
         origem.Controls.Add(_cancelar, 3, 0);
         principal.Controls.Add(origem, 0, 1);
-        _resumo.Text = "Selecione uma pasta e configure sua análise. Os arquivos são preservados durante a leitura.";
+        _resumo.Text = "Selecione uma pasta e configure sua análise. A preservação do último acesso é solicitada antes das leituras de conteúdo.";
         _resumo.Padding = new Padding(10);
         _resumo.AutoSize = true;
         _resumo.MinimumSize = new Size(0, 48);
@@ -82,11 +82,17 @@ public partial class Form1
         Adicionar(analise, _subtipo);
         Titulo(analise, "02   O que identificar");
         _identificarTemporarios.Text = "Nomes de backups e temporários";
-        _ativarSinalTemporal.Text = "Sem acesso registrado há mais de:";
+        _ativarSinalTemporal.Text = "Data registrada há mais de:";
+        _criterioTemporal.Items.AddRange(new object[] { "Último acesso", "Última modificação" });
+        _criterioTemporal.SelectedIndex = 0;
+        _politicaPreservacao.Items.AddRange(new object[] { "Não ler conteúdo sem preservação", "Ler mesmo assim, com aviso e registro" });
+        _politicaPreservacao.SelectedIndex = 0;
+        _tentarAdministrador.Click += (_, _) => TentarAdministrador();
         _ativarTamanho.Text = "Arquivos maiores que:";
         _ativarDuplicatas.Text = "Duplicatas exatas • SHA-256 e conteúdo";
         foreach (var check in new[] { _identificarVazios, _identificarTemporarios,
             _ativarSinalTemporal }) AdicionarOpcao(analise, check);
+        Adicionar(analise, _criterioTemporal);
         Adicionar(analise, Linha(_dias, new Label { Text = "dias", AutoSize = true }));
         AdicionarOpcao(analise, _ativarTamanho);
         _unidade.Items.AddRange(new object[] { "B", "KiB", "MiB", "GiB", "TiB" });
@@ -134,6 +140,13 @@ public partial class Form1
         _criarSubBase.Text = "Criar amostra por cópia";
         Adicionar(saidas, _criarSubBase);
 
+        Titulo(avancado, "Preservação do último acesso");
+        Adicionar(avancado, new Label { Text = "Sempre solicitada, qualquer que seja a data analisada. Se o Windows não permitir:",
+            Height = 64, Dock = DockStyle.Fill });
+        Adicionar(avancado, _politicaPreservacao);
+        Adicionar(avancado, _tentarAdministrador);
+        Adicionar(avancado, new Label { Text = "Administrador pode ajudar em arquivos locais; não garante permissão em servidores. Outros processos podem alterar datas. Falhas ficam registradas.",
+            Height = 110, Dock = DockStyle.Fill });
         Titulo(avancado, "Desempenho");
         Rotulo(avancado, "Leituras SHA-256 simultâneas");
         Adicionar(avancado, _maximoHashes);

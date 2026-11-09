@@ -16,6 +16,7 @@ namespace Clear.Infrastructure.Historico;
 public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDisposable
 {
     public const int VersaoEsquema = 1;
+    public Clear.Domain.Arquivos.ResumoPreservacaoAcesso? PreservacaoAcesso { get; set; }
 
     private readonly SqliteConnection _conexao;
     private readonly SqliteTransaction _transacao;
@@ -224,6 +225,7 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
             (duplicatas?.TotalOcorrencias ?? 0L));
         var resumo = new
         {
+            PreservacaoAcesso,
             Versao = "CLEAR-M6-1", DiretorioRaiz = _diretorioRaiz, InicioUtc = _inicioUtc,
             inventario.QuantidadeArquivos, inventario.QuantidadeDiretorios,
             inventario.TotalBytes, inventario.ArquivosComIndicios,
@@ -290,7 +292,8 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
         await using var comando = conexao.CreateCommand();
         comando.CommandText = """
             SELECT id, inicio_utc, fim_utc, pasta_raiz, estado, arquivos,
-                   diretorios, bytes, entradas_persistidas, grupos_duplicatas, total_ocorrencias
+                   diretorios, bytes, entradas_persistidas, grupos_duplicatas, total_ocorrencias,
+                   parametros_json, resumo_json
             FROM execucoes
             WHERE estado IN ('Concluida', 'Parcial')
             ORDER BY inicio_utc DESC, id DESC
@@ -308,7 +311,8 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
                 DateTimeOffset.Parse(leitor.GetString(2), CultureInfo.InvariantCulture),
                 leitor.GetString(3), leitor.GetString(4),
                 leitor.GetInt64(5), leitor.GetInt64(6), leitor.GetInt64(7),
-                leitor.GetInt64(8), leitor.GetInt64(9), leitor.GetInt64(10)));
+                leitor.GetInt64(8), leitor.GetInt64(9), leitor.GetInt64(10),
+                leitor.GetString(11), leitor.IsDBNull(12) ? null : leitor.GetString(12)));
         }
         return result.AsReadOnly();
     }

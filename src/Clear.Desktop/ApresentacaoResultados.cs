@@ -14,7 +14,7 @@ internal static class ApresentacaoResultados
             {
                 "ArquivoVazio" => "Arquivo vazio",
                 "CopiaBackupOuTemporario" => "Backup ou temporário",
-                "SinalTemporal" => "Último acesso antigo",
+                "SinalTemporal" => "Data antiga (critério da execução)",
                 var outro => outro
             }));
         }
