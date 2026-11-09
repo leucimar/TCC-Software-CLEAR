@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Clear.Benchmarks.M9/Clear.Benchmarks.M9.csproj" />
+    <Project Path="benchmarks/Clear.ValidacaoControlada/Clear.ValidacaoControlada.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Clear.Desktop.Tests/Clear.Desktop.Tests.csproj" />

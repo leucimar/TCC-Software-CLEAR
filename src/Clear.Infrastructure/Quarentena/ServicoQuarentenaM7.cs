@@ -194,7 +194,12 @@ public static class ServicoQuarentenaM7
         // terminada e auditoria não atualizada por escolha do usuário.
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(plano.CaminhoDestino)!);
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("A quarentena com preservação de segurança requer Windows.");
+            var permissoes = PreservacaoPermissoesQuarentena.Preparar(plano);
+            var auditoriaPermissoes = "SegurancaNTFS-v1; DACL/proprietario/grupo; SHA256=" + permissoes.ImpressaoArquivo;
+            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "Pendente", auditoriaPermissoes)
+                .ConfigureAwait(false);
             VerificarCaminhoSeguro(plano.CaminhoOriginal, arquivo: true);
             VerificarCaminhoSeguro(Path.GetDirectoryName(plano.CaminhoDestino)!, arquivo: false);
             if (File.Exists(plano.CaminhoDestino))
@@ -207,8 +212,10 @@ public static class ServicoQuarentenaM7
                 throw new IOException("Arquivo alterado antes da movimentação.");
 
             // Mesmo volume e overwrite=false: não sobrescreve arquivos.
+            permissoes.ValidarAntesDaMovimentacao();
             File.Move(plano.CaminhoOriginal, plano.CaminhoDestino, overwrite: false);
-            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "EmQuarentena", null)
+            permissoes.ValidarDepoisDaMovimentacao();
+            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "EmQuarentena", auditoriaPermissoes)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)

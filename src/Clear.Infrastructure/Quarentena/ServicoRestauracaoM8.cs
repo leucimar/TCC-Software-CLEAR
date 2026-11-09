@@ -95,7 +95,13 @@ public static class ServicoRestauracaoM8
             // Sem fallback de sobrescrita, renomeação, criação de diretórios ou cópia.
             if (File.Exists(plano.CaminhoOriginal) || Directory.Exists(plano.CaminhoOriginal))
                 throw new IOException("Conflito: o caminho original está ocupado.");
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("A restauração com preservação de segurança requer Windows.");
+            var permissoes = PreservacaoPermissoesQuarentena.PrepararRestauracao(
+                plano.CaminhoQuarentena, plano.CaminhoOriginal);
+            permissoes.ValidarAntesDaMovimentacao();
             File.Move(plano.CaminhoQuarentena, plano.CaminhoOriginal, overwrite: false);
+            permissoes.ValidarDepoisDaMovimentacao();
 
             var fim = DateTimeOffset.UtcNow;
             var gravados = await AtualizarEstadoAsync(conexao, plano.IdOperacao,
