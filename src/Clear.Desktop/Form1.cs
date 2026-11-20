@@ -151,6 +151,10 @@ public partial class Form1 : Form
     private readonly FlowLayoutPanel _painelSharePoint = new()
         { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
           WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
+    private readonly TextBox _caminhoBiblioteca = new()
+        { PlaceholderText = "Ex.: sites/Equipe/Documentos", MaxLength = 400, AccessibleName = "Caminho da biblioteca" };
+    private readonly TextBox _subpastaDestino = new()
+        { PlaceholderText = "Em branco para a raiz", MaxLength = 2048, AccessibleName = "Subpasta no destino" };
     private readonly Dictionary<string, CheckBox> _checks = new(StringComparer.Ordinal);
 
     private readonly CheckBox _identificarVazios = new()
@@ -298,6 +302,8 @@ public partial class Form1 : Form
         _tentarAdministrador.Enabled = pronto && !Administrador();
         _tentarAdministrador.Text = Administrador() ? "Executando como administrador" : "Tentar como administrador";
         _subtipo.Enabled = pronto && _sharePoint.Checked;
+        _caminhoBiblioteca.Enabled = pronto && _sharePoint.Checked;
+        _subpastaDestino.Enabled = pronto && (_azure.Checked || _sharePoint.Checked);
         _grupoAzure.Enabled = pronto && _azure.Checked;
         _grupoSharePoint.Enabled = pronto && _sharePoint.Checked;
         _identificarVazios.Enabled = pronto;
@@ -452,7 +458,10 @@ public partial class Form1 : Form
             : CatalogoVerificacoes.Definicoes.Where(x => x.Ambiente == perfil.Ambiente &&
                 _checks[x.Codigo].Checked).Select(x => x.Codigo).ToArray();
 
-        return new ConfiguracaoCompatibilidade(perfil, habilitadas);
+        return new ConfiguracaoCompatibilidade(perfil, habilitadas,
+            _sharePoint.Checked && !string.IsNullOrWhiteSpace(_caminhoBiblioteca.Text)
+                ? _caminhoBiblioteca.Text : null,
+            perfil is not null ? _subpastaDestino.Text : null);
     }
 
     private FiltroTamanhoPersonalizado? CriarFiltroPersonalizado()
@@ -493,6 +502,9 @@ public partial class Form1 : Form
             $"Historico={_salvarHistorico.Checked}",
             $"Perfil={destino.Perfil?.Ambiente}",
             $"Subtipo={destino.Perfil?.Subtipo}",
+            $"CatalogoDestino={CatalogoVerificacoes.Versao}",
+            $"Biblioteca={destino.CaminhoBibliotecaDecodificado}",
+            $"SubpastaDestino={destino.SubpastaDestino}",
             $"Regras={string.Join(",", destino.CodigosHabilitados.OrderBy(x => x, StringComparer.Ordinal))}"
         });
     }
@@ -738,7 +750,9 @@ public partial class Form1 : Form
                     usarSinalTemporal ? referenciaTemporalUtc : null,
                     usarDuplicatas,
                     usarSinalTemporal ? criterioSelecionado.ToString() + "Utc" : null,
-                    politicaSelecionada.ToString());
+                    politicaSelecionada.ToString(),
+                    CatalogoVerificacoes.Versao, configuracao.CaminhoBibliotecaDecodificado,
+                    configuracao.SubpastaDestino);
 
                 historico = await SessaoHistoricoSqliteM6.IniciarAsync(
                     pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);

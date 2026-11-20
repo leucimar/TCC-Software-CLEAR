@@ -278,6 +278,9 @@ public sealed class ExportadorRelatoriosM5 : IObservadorInventario, IAsyncDispos
                     Perfil = inventario.ConfiguracaoCompatibilidade.Perfil?.Ambiente.ToString(),
                     Subtipo = inventario.ConfiguracaoCompatibilidade.Perfil?.Subtipo?.ToString(),
                     RegrasHabilitadas = inventario.ConfiguracaoCompatibilidade.CodigosHabilitados,
+                    CatalogoDestino = Clear.Domain.Compatibilidade.CatalogoVerificacoes.Versao,
+                    inventario.ConfiguracaoCompatibilidade.CaminhoBibliotecaDecodificado,
+                    inventario.ConfiguracaoCompatibilidade.SubpastaDestino,
                     LimitePessoalBytes = inventario.FiltroPersonalizado?.LimiteBytes,
                     Ocorrencias = inventario.Ocorrencias
                 },

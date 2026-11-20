@@ -14,7 +14,9 @@ public sealed record ParametrosHistoricoM6(
     DateTimeOffset? ReferenciaTemporalUtc,
     bool DetectarDuplicatas,
     string? CriterioTemporal = null,
-    string PoliticaPreservacaoAcesso = "NaoLerConteudo")
+    string PoliticaPreservacaoAcesso = "NaoLerConteudo",
+    string? CatalogoDestino = null, string? CaminhoBibliotecaDecodificado = null,
+    string? SubpastaDestino = null)
 {
     public static ParametrosHistoricoM6 SemFiltros { get; } = new(
         Array.Empty<string>(), null, null, Array.Empty<string>(), null, null, null, false);

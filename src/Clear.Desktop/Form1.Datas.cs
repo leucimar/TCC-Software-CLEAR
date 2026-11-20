@@ -67,7 +67,8 @@ public partial class Form1
                 _ativarDuplicatas.Checked, (int)_maximoHashes.Value, (int)_limiteIndexacao.Value,
                 _ativarTamanho.Checked, _limite.Value, _unidade.SelectedIndex,
                 _exportarRelatorio.Checked, _filtroRelatorio.SelectedIndex, _salvarHistorico.Checked,
-                _salvarCheckpoint.Checked, _checks.Where(x => x.Value.Checked).Select(x => x.Key).ToArray());
+                _salvarCheckpoint.Checked, _checks.Where(x => x.Value.Checked).Select(x => x.Key).ToArray(),
+                _caminhoBiblioteca.Text, _subpastaDestino.Text);
 
     private static ProcessStartInfo CriarInicioElevacao(string arquivo)
     {
@@ -98,6 +99,8 @@ public partial class Form1
         _pastaQuarentena.Text = c.Quarentena; _quarentenaManual = c.QuarentenaManual;
         _semDestino.Checked = c.Destino == 0; _azure.Checked = c.Destino == 1; _sharePoint.Checked = c.Destino == 2;
         _subtipo.SelectedIndex = c.Subtipo;
+        _caminhoBiblioteca.Text = c.Biblioteca ?? string.Empty;
+        _subpastaDestino.Text = c.SubpastaDestino ?? string.Empty;
         _identificarVazios.Checked = c.Vazios; _identificarTemporarios.Checked = c.Temporarios;
         _ativarSinalTemporal.Checked = c.Temporal; _dias.Value = c.Dias;
         _criterioTemporal.SelectedIndex = c.Criterio; _politicaPreservacao.SelectedIndex = c.Politica;
@@ -115,5 +118,6 @@ public partial class Form1
     private sealed record ConfiguracaoJanela(string Origem, string Relatorios, string Quarentena,
         bool QuarentenaManual, int Destino, int Subtipo, bool Vazios, bool Temporarios, bool Temporal,
         int Dias, int Criterio, int Politica, bool Duplicatas, int Hashes, int Indexacao, bool Tamanho,
-        decimal Limite, int Unidade, bool Exportar, int Filtro, bool Historico, bool Checkpoint, string[] Regras);
+        decimal Limite, int Unidade, bool Exportar, int Filtro, bool Historico, bool Checkpoint, string[] Regras,
+        string? Biblioteca = null, string? SubpastaDestino = null);
 }

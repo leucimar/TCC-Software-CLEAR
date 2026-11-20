@@ -74,7 +74,7 @@ public sealed class AvaliacaoCompatibilidadeInventarioTests
         Assert.AreEqual(0L, resultado.ItensComIncompatibilidade);
         Assert.AreEqual(0L, resultado.AvaliacoesExecutadas);
         Assert.IsFalse(resultado.ApenasSemIncompatibilidadeDetectada);
-        Assert.AreEqual(2L, resultado.ContagensVerificacoes
+        Assert.AreEqual(5L, resultado.ContagensVerificacoes
             .Where(x => x.Estado == EstadoVerificacao.Desabilitada)
             .Sum(x => x.Quantidade));
     }

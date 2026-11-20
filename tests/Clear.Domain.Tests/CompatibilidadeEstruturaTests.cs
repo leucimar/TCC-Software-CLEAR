@@ -30,13 +30,13 @@ public sealed class CompatibilidadeEstruturaTests
     }
 
     [TestMethod]
-    public void CatalogoContemSeteDefinicoesComCodigosUnicos()
+    public void CatalogoContemTrezeDefinicoesComCodigosUnicos()
     {
-        Assert.HasCount(7, CatalogoVerificacoes.Definicoes);
-        Assert.AreEqual(7, CatalogoVerificacoes.Definicoes.Select(x => x.Codigo).Distinct().Count());
-        Assert.AreEqual(2, CatalogoVerificacoes.Definicoes.Count(
-            x => x.Ambiente == AmbienteDestino.AzureFilesClassicoSmb));
+        Assert.HasCount(13, CatalogoVerificacoes.Definicoes);
+        Assert.AreEqual(13, CatalogoVerificacoes.Definicoes.Select(x => x.Codigo).Distinct().Count());
         Assert.AreEqual(5, CatalogoVerificacoes.Definicoes.Count(
+            x => x.Ambiente == AmbienteDestino.AzureFilesClassicoSmb));
+        Assert.AreEqual(8, CatalogoVerificacoes.Definicoes.Count(
             x => x.Ambiente == AmbienteDestino.SharePointOneDriveEmpresarial));
         Assert.IsNotNull(CatalogoVerificacoes.Encontrar("SPO-TAM-001"));
         Assert.IsNull(CatalogoVerificacoes.Encontrar("DESCONHECIDA"));

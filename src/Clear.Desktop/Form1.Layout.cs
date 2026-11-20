@@ -103,6 +103,10 @@ public partial class Form1
             Height = 44, Dock = DockStyle.Fill });
 
         Titulo(analise, "03   Verificações do destino");
+        Adicionar(analise, new Label { Text = "SharePoint / OneDrive: biblioteca (caminho decodificado, sem domínio)", AutoSize = true });
+        Adicionar(analise, _caminhoBiblioteca);
+        Adicionar(analise, new Label { Text = "Subpasta no destino (SharePoint ou Azure Files)", AutoSize = true });
+        Adicionar(analise, _subpastaDestino);
         foreach (var definicao in CatalogoVerificacoes.Definicoes)
         {
             var opcao = new CheckBox { Text = definicao.Rotulo,

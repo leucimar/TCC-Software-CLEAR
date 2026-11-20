@@ -164,7 +164,7 @@ public sealed class RegrasCompatibilidadeM3BTests
     public void NenhumaRegraLigadaNaoSignificaCompatibilidadeGarantida()
     {
         var resultados = SpoCom().Avaliar(Arquivo("nome?.txt"));
-        Assert.HasCount(5, resultados);
+        Assert.HasCount(8, resultados);
         Assert.IsTrue(resultados.All(x => x.Estado == EstadoVerificacao.Desabilitada));
         var resumo = new ResumoVerificacoes(resultados);
         Assert.IsFalse(resumo.AlgumaVerificacaoExecutada);
@@ -183,8 +183,8 @@ public sealed class RegrasCompatibilidadeM3BTests
     [TestMethod]
     public void CadaPerfilRecebeSomenteSuasRegras()
     {
-        Assert.HasCount(2, AzureCom(Azure).Avaliar(Arquivo("a.txt")));
-        Assert.HasCount(5, SpoCom(Spo).Avaliar(Arquivo("a.txt")));
+        Assert.HasCount(5, AzureCom(Azure).Avaliar(Arquivo("a.txt")));
+        Assert.HasCount(8, SpoCom(Spo).Avaliar(Arquivo("a.txt")));
         Assert.IsFalse(AzureCom(Azure).Avaliar(Arquivo("a.txt"))
             .Any(x => x.CodigoRegra.StartsWith("SPO-", StringComparison.Ordinal)));
     }

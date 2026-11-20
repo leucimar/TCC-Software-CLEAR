@@ -33,17 +33,23 @@ public sealed class DefinicaoVerificacao
 /// </summary>
 public static class CatalogoVerificacoes
 {
-    public const string Versao = "M3-3B-1";
+    public const string Versao = "M3-3B-2";
 
     public static IReadOnlyList<DefinicaoVerificacao> Definicoes { get; } =
         Array.AsReadOnly(new[]
         {
             new DefinicaoVerificacao("AZF-NOME-001", "Pontuação proibida", AmbienteDestino.AzureFilesClassicoSmb, "F01"),
             new DefinicaoVerificacao("AZF-TAM-001", "Tamanho máximo: 4 TiB", AmbienteDestino.AzureFilesClassicoSmb, "F02"),
+            new DefinicaoVerificacao("AZF-NOME-002", "Nomes reservados do Azure Files", AmbienteDestino.AzureFilesClassicoSmb, "D4 Azure Files naming"),
+            new DefinicaoVerificacao("AZF-CAM-001", "Caminho no destino: 2.048 caracteres", AmbienteDestino.AzureFilesClassicoSmb, "D4 Azure Files scale targets"),
+            new DefinicaoVerificacao("AZF-CAM-002", "Nome do componente: 255 caracteres", AmbienteDestino.AzureFilesClassicoSmb, "D4 Azure Files scale targets"),
             new DefinicaoVerificacao("SPO-NOME-001", "Pontuação proibida", AmbienteDestino.SharePointOneDriveEmpresarial, "F14"),
             new DefinicaoVerificacao("SPO-NOME-002", "Espaço inicial", AmbienteDestino.SharePointOneDriveEmpresarial, "F14"),
             new DefinicaoVerificacao("SPO-NOME-003", "Espaço final", AmbienteDestino.SharePointOneDriveEmpresarial, "F14"),
             new DefinicaoVerificacao("SPO-NOME-004", "Sequência _vti_", AmbienteDestino.SharePointOneDriveEmpresarial, "F14/F19"),
+            new DefinicaoVerificacao("SPO-NOME-005", "Nomes e prefixos reservados do SharePoint", AmbienteDestino.SharePointOneDriveEmpresarial, "D4 OneDrive and SharePoint restrictions"),
+            new DefinicaoVerificacao("SPO-NOME-006", "Forms na raiz da biblioteca", AmbienteDestino.SharePointOneDriveEmpresarial, "D4 OneDrive and SharePoint restrictions"),
+            new DefinicaoVerificacao("SPO-CAM-001", "Caminho no destino: 400 caracteres", AmbienteDestino.SharePointOneDriveEmpresarial, "D4 SharePoint Online limits"),
             new DefinicaoVerificacao("SPO-TAM-001", "Tamanho máximo: 250 GiB", AmbienteDestino.SharePointOneDriveEmpresarial, "F15")
         });
 
