@@ -13,6 +13,35 @@ public static class ConsultaQuarentenaFiltradaM11
     public const int TamanhoPagina = 200;
     public const int MaximoLote = 10000;
 
+    public static async Task<IReadOnlyList<RegistroQuarentenaM7>> ConsultarAtivasAsync(
+        string banco, string execucao, CancellationToken ct = default)
+    {
+        if (!File.Exists(banco)) return [];
+        await using var db = await AbrirAsync(banco, ct).ConfigureAwait(false);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version;";
+        var versao = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+        var estrutura = versao == 1 ? "NULL, NULL" : "raiz_analisada, estrutura";
+        cmd.CommandText = """
+            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem,
+                   criado_utc,
+            """ + " " + estrutura + """
+             FROM movimentacoes WHERE execucao_id = $exec AND estado = 'EmQuarentena'
+            ORDER BY criado_utc, id;
+            """;
+        cmd.Parameters.AddWithValue("$exec", execucao);
+        var registros = new List<RegistroQuarentenaM7>();
+        await using var leitor = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await leitor.ReadAsync(ct).ConfigureAwait(false))
+            registros.Add(new(leitor.GetString(0), leitor.GetString(1), leitor.GetString(2),
+                leitor.GetString(3), leitor.GetInt64(4), leitor.GetString(5), leitor.GetString(6),
+                leitor.IsDBNull(7) ? null : leitor.GetString(7), leitor.GetString(8),
+                leitor.IsDBNull(9) ? null : leitor.GetString(9),
+                leitor.IsDBNull(10) ? "Legado" : leitor.GetString(10)));
+        return registros;
+    }
+
     /// <summary>
     /// Identifica arquivos ainda ocupados pela quarentena, inclusive de análises
     /// anteriores. Lê a auditoria sem alterá-la; a UI não reoferece esses caminhos.

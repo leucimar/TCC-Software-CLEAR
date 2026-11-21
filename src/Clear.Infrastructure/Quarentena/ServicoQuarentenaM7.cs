@@ -18,7 +18,8 @@ public sealed record PlanoQuarentenaM7(
 public sealed record RegistroQuarentenaM7(
     string IdOperacao, string Estado, string CaminhoOriginal,
     string CaminhoDestino, long TamanhoBytes, string Sha256Hex,
-    string IdExecucao, string? Mensagem);
+    string IdExecucao, string? Mensagem, string? CriadoUtc = null,
+    string? RaizAnalisada = null, string Estrutura = "Legado");
 
 /// <summary>
 /// Movimentação individual para quarentena com aprovação humana explícita,
@@ -248,7 +249,7 @@ public static class ServicoQuarentenaM7
         await ValidarVersaoAsync(conexao, cancelamento).ConfigureAwait(false);
         await using var comando = conexao.CreateCommand();
         comando.CommandText = """
-            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem
+            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem, criado_utc
             FROM movimentacoes
             WHERE ($execucao IS NULL OR execucao_id = $execucao)
             ORDER BY criado_utc DESC, id LIMIT 200 OFFSET $offset;
@@ -261,7 +262,8 @@ public static class ServicoQuarentenaM7
             itens.Add(new RegistroQuarentenaM7(
                 leitor.GetString(0), leitor.GetString(1), leitor.GetString(2),
                 leitor.GetString(3), leitor.GetInt64(4), leitor.GetString(5),
-                leitor.GetString(6), leitor.IsDBNull(7) ? null : leitor.GetString(7)));
+                leitor.GetString(6), leitor.IsDBNull(7) ? null : leitor.GetString(7),
+                leitor.GetString(8)));
         return itens.AsReadOnly();
     }
 

@@ -197,6 +197,17 @@ public static class ServicoRestauracaoM8
             throw new IOException("SHA-256 ou metadados da quarentena divergentes; restauração bloqueada.");
     }
 
+    public static (string Origem, string Destino) ConsultarRaizes(
+        RegistroQuarentenaM7 registro, string raizAnalise)
+    {
+        var plano = new PlanoRestauracaoM8(registro.IdOperacao, registro.IdExecucao,
+            registro.CaminhoDestino, registro.CaminhoOriginal, registro.TamanhoBytes,
+            registro.Sha256Hex, registro.RaizAnalisada, registro.Estrutura);
+        var origem = ObterRaizQuarentena(plano, Path.GetFullPath(plano.CaminhoQuarentena),
+            Path.GetFullPath(plano.CaminhoOriginal));
+        return (origem, Path.GetFullPath(registro.RaizAnalisada ?? raizAnalise));
+    }
+
     private static string ObterRaizQuarentena(PlanoRestauracaoM8 plano,
         string fonte, string destino)
     {

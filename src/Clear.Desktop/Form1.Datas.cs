@@ -66,7 +66,7 @@ public partial class Form1
                 (int)_dias.Value, _criterioTemporal.SelectedIndex, _politicaPreservacao.SelectedIndex,
                 _ativarDuplicatas.Checked, (int)_maximoHashes.Value, (int)_limiteIndexacao.Value,
                 _ativarTamanho.Checked, _limite.Value, _unidade.SelectedIndex,
-                _exportarRelatorio.Checked, _filtroRelatorio.SelectedIndex, _salvarHistorico.Checked,
+                _exportarRelatorio.Checked, _filtroRelatorio.SelectedIndex, true,
                 _salvarCheckpoint.Checked, _checks.Where(x => x.Value.Checked).Select(x => x.Key).ToArray(),
                 _caminhoBiblioteca.Text, _subpastaDestino.Text);
 
@@ -107,7 +107,7 @@ public partial class Form1
         _ativarDuplicatas.Checked = c.Duplicatas; _maximoHashes.Value = c.Hashes; _limiteIndexacao.Value = c.Indexacao;
         _ativarTamanho.Checked = c.Tamanho; _limite.Value = c.Limite; _unidade.SelectedIndex = c.Unidade;
         _exportarRelatorio.Checked = c.Exportar; _filtroRelatorio.SelectedIndex = c.Filtro;
-        _salvarHistorico.Checked = c.Historico; _salvarCheckpoint.Checked = c.Checkpoint;
+        _salvarCheckpoint.Checked = c.Checkpoint;
         foreach (var item in _checks) item.Value.Checked = c.Regras.Contains(item.Key, StringComparer.Ordinal);
         AtualizarHabilitacao();
         // Do not delete a path supplied on the command line under an elevated identity.

@@ -55,9 +55,10 @@ public sealed class ConfiguracaoDatasTests
                 Campo<CheckBox>(original,"_ativarDuplicatas").Checked=true;
                 Campo<NumericUpDown>(original,"_maximoHashes").Value=8;
                 Campo<CheckBox>(original,"_exportarRelatorio").Checked=true;
-                Campo<CheckBox>(original,"_salvarHistorico").Checked=true;
                 var antes=JsonSerializer.Serialize(Chamar(original,"CapturarConfiguracaoElevacao"));
-                File.WriteAllText(caminho,antes);
+                using var captura=JsonDocument.Parse(antes);
+                Assert.IsTrue(captura.RootElement.GetProperty("Historico").GetBoolean());
+                File.WriteAllText(caminho,antes.Replace("\"Historico\":true", "\"Historico\":false", StringComparison.Ordinal));
                 using var nova=new Form1();Chamar(nova,"AplicarConfiguracaoElevacao",caminho);
                 Assert.AreEqual(antes,JsonSerializer.Serialize(Chamar(nova,"CapturarConfiguracaoElevacao")));
                 Assert.IsNull(typeof(Form1).GetField("_cancelamento",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(nova));

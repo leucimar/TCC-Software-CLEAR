@@ -1,3 +1,4 @@
+using Clear.Domain.Arquivos;
 using Microsoft.Data.Sqlite;
 
 namespace Clear.Infrastructure.Historico;
@@ -7,7 +8,7 @@ public sealed record EntradaHistoricaM6(
     long Id, string Tipo, string Caminho, long? TamanhoBytes,
     string? ModificadoUtc, string CategoriasJson, string EvidenciasJson,
     string VerificacoesJson, bool AcimaDoLimitePessoal,
-    bool EhDuplicataExata = false, string? AcessadoUtc = null);
+    bool EhDuplicataExata = false, string? AcessadoUtc = null, long? GrupoDuplicata = null);
 
 public sealed record MembroDuplicataHistoricaM6(
     long Grupo, long TamanhoBytes, string Sha256,
@@ -93,17 +94,28 @@ public static class ConsultaHistoricoSqliteM6
 
     public static async Task<IReadOnlyList<OcorrenciaHistoricaM6>> ConsultarOcorrenciasAsync(
         string caminhoBanco, string idExecucao, CancellationToken cancellationToken = default)
+        => (await ConsultarPaginaOcorrenciasAsync(caminhoBanco, idExecucao, 0,
+            cancellationToken: cancellationToken).ConfigureAwait(false)).Ocorrencias;
+
+    public static async Task<(IReadOnlyList<OcorrenciaHistoricaM6> Ocorrencias, long Total)>
+        ConsultarPaginaOcorrenciasAsync(string caminhoBanco, string idExecucao, int pagina,
+            IReadOnlyList<OcorrenciaPreservacaoAcesso>? preservacao = null,
+            CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(idExecucao))
-            throw new ArgumentException("Selecione uma execução histórica.", nameof(idExecucao));
+        ValidarPaginaEExecucao(idExecucao, pagina);
         await using var conexao = await AbrirSomenteLeituraAsync(caminhoBanco, cancellationToken)
             .ConfigureAwait(false);
         await using var comando = conexao.CreateCommand();
+        comando.CommandText = "SELECT COUNT(*) FROM ocorrencias WHERE execucao_id = $id;";
+        comando.Parameters.AddWithValue("$id", idExecucao);
+        var total = (long)(await comando.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+        var inicio = checked((long)pagina * TamanhoPagina);
         comando.CommandText = """
             SELECT origem, tipo, caminho, descricao
-            FROM ocorrencias WHERE execucao_id = $id ORDER BY id LIMIT 200;
+            FROM ocorrencias WHERE execucao_id = $id ORDER BY id LIMIT $limite OFFSET $inicio;
             """;
-        comando.Parameters.AddWithValue("$id", idExecucao);
+        comando.Parameters.AddWithValue("$limite", TamanhoPagina);
+        comando.Parameters.AddWithValue("$inicio", inicio);
         var result = new List<OcorrenciaHistoricaM6>();
         await using var leitor = await comando.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -111,7 +123,13 @@ public static class ConsultaHistoricoSqliteM6
             result.Add(new OcorrenciaHistoricaM6(
                 leitor.GetString(0), leitor.GetString(1),
                 leitor.GetString(2), leitor.GetString(3)));
-        return result.AsReadOnly();
+        if (preservacao is not null && result.Count < TamanhoPagina)
+        {
+            var ignorar = (int)Math.Min(preservacao.Count, Math.Max(0, inicio - total));
+            result.AddRange(preservacao.Skip(ignorar).Take(TamanhoPagina - result.Count)
+                .Select(p => new OcorrenciaHistoricaM6("Preservação", p.Estado, p.Caminho, p.Motivo)));
+        }
+        return (result.AsReadOnly(), total + (preservacao?.Count ?? 0));
     }
 
     private static void ValidarPaginaEExecucao(string idExecucao, int pagina)

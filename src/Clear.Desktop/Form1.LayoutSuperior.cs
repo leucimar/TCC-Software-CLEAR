@@ -41,10 +41,10 @@ public partial class Form1
 
         secoes.Controls.Add(MontarSecao(new GroupBox { Text = "Relatórios e histórico" },
             _exportarRelatorio, _filtroRelatorio, CampoComComplemento(_pastaRelatorios, _escolherRelatorios),
-            _salvarHistorico), 0, 2);
+            Legenda("Histórico salvo automaticamente.")), 0, 2);
         secoes.Controls.Add(MontarSecao(new GroupBox { Text = "Quarentena e amostra" },
             CampoComComplemento(_pastaQuarentena, _escolherQuarentena), _criarSubBase,
-            Legenda("Confirme movimentações no Histórico.")), 1, 2);
+            Legenda("Movimentações no Inventário.")), 1, 2);
         secoes.Controls.Add(MontarSecao(new GroupBox { Text = "Preservação e desempenho" },
             Legenda("Se a preservação do último acesso falhar"), _politicaPreservacao, _tentarAdministrador,
             MontarCamposDeDesempenho()), 2, 2);
@@ -54,30 +54,46 @@ public partial class Form1
 
         var rolagem = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
         rolagem.Controls.Add(secoes);
-        var area = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        var alturaOpcoes = new RowStyle(SizeType.Absolute, 310);
+        var area = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        var alturaOpcoes = new RowStyle(SizeType.Absolute, 270);
+        area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         area.RowStyles.Add(alturaOpcoes);
+        area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         area.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        area.Controls.Add(rolagem, 0, 0);
-        area.Controls.Add(resultados, 0, 1);
+        area.Controls.Add(PainelInventario.Faixa(_alternarConfiguracoes), 0, 0);
+        area.Controls.Add(rolagem, 0, 1);
+        area.Controls.Add(MontarSeletorDeAnalise(), 0, 2);
+        area.Controls.Add(resultados, 0, 3);
 
         void AjustarAltura(object? sender, EventArgs args)
         {
-            var alturaDisponivel = Math.Max(0, area.ClientSize.Height - 170 * DeviceDpi / 96);
-            var altura = Math.Min(secoes.Height, alturaDisponivel);
-            if (alturaOpcoes.Height != altura)
-                alturaOpcoes.Height = altura;
+            var alturaDisponivel = Math.Max(0, area.ClientSize.Height - 303 * DeviceDpi / 96);
+            var altura = _configuracoesExpandidas ? Math.Min(secoes.Height, alturaDisponivel) : 0;
+            if (alturaOpcoes.Height != altura) alturaOpcoes.Height = altura;
+            rolagem.Visible = _configuracoesExpandidas;
+            _alternarConfiguracoes.Text = _configuracoesExpandidas
+                ? "▴  Ocultar configurações" : "▾  Expandir configurações";
         }
 
         secoes.SizeChanged += AjustarAltura;
         area.ClientSizeChanged += AjustarAltura;
+        AlterarVisibilidadeConfiguracoes += AjustarAltura;
+        _alternarConfiguracoes.Click += (_, _) => DefinirConfiguracoesExpandidas(!_configuracoesExpandidas);
         return area;
+    }
+
+    private bool _configuracoesExpandidas = true;
+    private event EventHandler? AlterarVisibilidadeConfiguracoes;
+
+    private void DefinirConfiguracoesExpandidas(bool expandir)
+    {
+        _configuracoesExpandidas = expandir;
+        AlterarVisibilidadeConfiguracoes?.Invoke(this, EventArgs.Empty);
     }
 
     private GroupBox MontarGrupoDeRegras(GroupBox grupo, AmbienteDestino ambiente)
     {
         var regras = OpcoesDoAmbiente(ambiente).ToArray();
-        if (!LayoutSuperior) return MontarSecao(grupo, regras);
 
         int divisao = (regras.Length + 1) / 2;
         return MontarSecao(grupo, ColunasCompactas(regras[..divisao], regras[divisao..]));
@@ -134,8 +150,7 @@ public partial class Form1
         grupo.AutoSize = true;
         grupo.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         grupo.Dock = DockStyle.Fill;
-        int margemHorizontal = LayoutSuperior ? 6 : 8;
-        grupo.Padding = new Padding(margemHorizontal, 3, margemHorizontal, 5);
+        grupo.Padding = new Padding(6, 3, 6, 5);
         grupo.Controls.Add(PilhaCompacta(controles));
         return grupo;
     }
@@ -152,18 +167,6 @@ public partial class Form1
             pilha.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             pilha.Controls.Add(controle, 0, pilha.RowStyles.Count - 1);
         }
-        if (LayoutSuperior) return pilha;
-
-        pilha.ClientSizeChanged += (_, _) =>
-        {
-            foreach (var controle in controles)
-            {
-                if (controle is not (Label or CheckBox or RadioButton)) continue;
-                var largura = Math.Max(1, pilha.ClientSize.Width - controle.Margin.Horizontal);
-                if (controle.MaximumSize.Width != largura)
-                    controle.MaximumSize = new Size(largura, 0);
-            }
-        };
         return pilha;
     }
 

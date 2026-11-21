@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Clear.Application\Clear.Application.csproj" />
@@ -13,9 +13,5 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-
-  <ItemGroup Condition="'$(ClearLayout)' == 'Lateral'">
-    <RuntimeHostConfigurationOption Include="Clear.LayoutSuperior" Value="false" />
-  </ItemGroup>
 
 </Project>

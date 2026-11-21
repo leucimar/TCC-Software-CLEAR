@@ -271,8 +271,37 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
         await _conexao.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <summary>Registra a tentativa sem publicar as entradas incompletas.</summary>
+    public async Task RegistrarInterrupcaoAsync(bool cancelada, string motivo)
+    {
+        if (_finalizada) return;
+        await ExecutarAsync(_conexao, _transacao,
+            "DELETE FROM entradas WHERE execucao_id = $id;", CancellationToken.None,
+            ("$id", _id)).ConfigureAwait(false);
+        await ExecutarAsync(_conexao, _transacao,
+            "DELETE FROM grupos_duplicatas WHERE execucao_id = $id;", CancellationToken.None,
+            ("$id", _id)).ConfigureAwait(false);
+        await ExecutarAsync(_conexao, _transacao,
+            "DELETE FROM membros_duplicatas WHERE execucao_id = $id;", CancellationToken.None,
+            ("$id", _id)).ConfigureAwait(false);
+        await ExecutarAsync(_conexao, _transacao,
+            "DELETE FROM ocorrencias WHERE execucao_id = $id;", CancellationToken.None,
+            ("$id", _id)).ConfigureAwait(false);
+        await ExecutarAsync(_conexao, _transacao, """
+            UPDATE execucoes SET fim_utc = $fim, estado = $estado, resumo_json = $resumo,
+                arquivos = 0, diretorios = 0, bytes = 0, entradas_persistidas = 0,
+                grupos_duplicatas = 0, total_ocorrencias = 0 WHERE id = $id;
+            """, CancellationToken.None, ("$id", _id),
+            ("$fim", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)),
+            ("$estado", cancelada ? "Cancelada" : "Falhou"),
+            ("$resumo", JsonSerializer.Serialize(new { Motivo = motivo }))).ConfigureAwait(false);
+        await _transacao.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        _finalizada = true;
+    }
+
     public static async Task<IReadOnlyList<ResumoExecucaoHistoricaM6>> ConsultarUltimasAsync(
-        string caminhoBanco, int limite = 30, CancellationToken cancellationToken = default)
+        string caminhoBanco, int limite = 30, CancellationToken cancellationToken = default,
+        bool incluirInterrompidas = false, bool incluirTodas = false)
     {
         if (limite is < 1 or > 1000)
             throw new ArgumentOutOfRangeException(nameof(limite));
@@ -293,13 +322,15 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
         comando.CommandText = """
             SELECT id, inicio_utc, fim_utc, pasta_raiz, estado, arquivos,
                    diretorios, bytes, entradas_persistidas, grupos_duplicatas, total_ocorrencias,
-                   parametros_json, resumo_json
+                   parametros_json, resumo_json, rowid
             FROM execucoes
             WHERE estado IN ('Concluida', 'Parcial')
+                OR ($interrompidas = 1 AND estado IN ('Cancelada', 'Falhou'))
             ORDER BY inicio_utc DESC, id DESC
             LIMIT $limite;
             """;
-        comando.Parameters.AddWithValue("$limite", limite);
+        comando.Parameters.AddWithValue("$limite", incluirTodas ? -1 : limite);
+        comando.Parameters.AddWithValue("$interrompidas", incluirInterrompidas ? 1 : 0);
         var result = new List<ResumoExecucaoHistoricaM6>();
         await using var leitor = await comando.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -312,7 +343,8 @@ public sealed class SessaoHistoricoSqliteM6 : IObservadorInventario, IAsyncDispo
                 leitor.GetString(3), leitor.GetString(4),
                 leitor.GetInt64(5), leitor.GetInt64(6), leitor.GetInt64(7),
                 leitor.GetInt64(8), leitor.GetInt64(9), leitor.GetInt64(10),
-                leitor.GetString(11), leitor.IsDBNull(12) ? null : leitor.GetString(12)));
+                leitor.GetString(11), leitor.IsDBNull(12) ? null : leitor.GetString(12),
+                leitor.GetInt64(13)));
         }
         return result.AsReadOnly();
     }
