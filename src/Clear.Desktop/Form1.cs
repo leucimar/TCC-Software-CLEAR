@@ -91,7 +91,7 @@ public partial class Form1 : Form
     private readonly CheckBox _salvarHistorico = new()
     {
         Text = "Salvar histórico local SQLite (M6; não reutiliza classificações)",
-        AutoSize = true, Checked = false
+        AutoSize = true, Checked = true
     };
     private readonly Button _atualizarHistorico = new()
     {
@@ -145,12 +145,6 @@ public partial class Form1 : Form
         { Text = "Azure Files — SMB/Windows", Dock = DockStyle.Fill };
     private readonly GroupBox _grupoSharePoint = new()
         { Text = "SharePoint Online / OneDrive empresarial", Dock = DockStyle.Fill };
-    private readonly FlowLayoutPanel _painelAzure = new()
-        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
-    private readonly FlowLayoutPanel _painelSharePoint = new()
-        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
     private readonly TextBox _caminhoBiblioteca = new()
         { PlaceholderText = "Ex.: sites/Equipe/Documentos", MaxLength = 400, AccessibleName = "Caminho da biblioteca" };
     private readonly TextBox _subpastaDestino = new()
@@ -209,6 +203,7 @@ public partial class Form1 : Form
         _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarDuplicatas.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _atualizarHistorico.Click += async (_, _) => await AtualizarHistoricoAsync();
+        Shown += async (_, _) => await AtualizarHistoricoAsync();
         _consultarDetalhesHistorico.Click += (_, _) => AbrirDetalhesHistorico();
         _gradeHistorico.CellDoubleClick += (_, _) => AbrirDetalhesHistorico();
         _selecionar.Click += (_, _) => SelecionarPasta();
@@ -265,6 +260,9 @@ public partial class Form1 : Form
             foreach (DataGridViewColumn coluna in _grade.Columns)
                 if (larguras.TryGetValue(coluna.Name, out var largura))
                     coluna.Width = largura;
+            if (LayoutSuperior && _grade.Columns["DuplicataExata"] is { } duplicata &&
+                _grade.Columns["IndiciosGerais"] is { } indicios)
+                duplicata.DisplayIndex = indicios.DisplayIndex + 1;
             foreach (DataGridViewRow linha in _grade.Rows)
                 foreach (DataGridViewCell celula in linha.Cells)
                     celula.ToolTipText = Convert.ToString(celula.Value) ?? "";
@@ -449,8 +447,9 @@ public partial class Form1 : Form
         PerfilDestino? perfil = _azure.Checked ? PerfilDestino.AzureFilesSmb()
             : _sharePoint.Checked
                 ? PerfilDestino.SharePointEmpresarial(
-                    _subtipo.SelectedIndex == 1 ? SubtipoSharePoint.OneDriveForBusiness
-                                                : SubtipoSharePoint.SharePointOnline)
+                    !LayoutSuperior && _subtipo.SelectedIndex == 1
+                        ? SubtipoSharePoint.OneDriveForBusiness
+                        : SubtipoSharePoint.SharePointOnline)
                 : null;
 
         var habilitadas = perfil is null
@@ -788,7 +787,7 @@ public partial class Form1 : Form
 
             var textoPerfil = configuracao.Perfil is null ? "Sem perfil de destino"
                 : configuracao.Perfil.Ambiente == AmbienteDestino.AzureFilesClassicoSmb
-                    ? "Azure Files SMB" : configuracao.Perfil.Subtipo?.ToString() ?? "SPO";
+                    ? "Azure Files SMB" : "SharePoint";
 
             var estado = !configuracao.HaVerificacoesHabilitadas
                 ? "Nenhuma verificação de destino habilitada."
@@ -967,7 +966,8 @@ public partial class Form1 : Form
                 ? "Concluída com ocorrências • Consulte a aba Ocorrências."
                 : "Análise concluída • Conteúdo dos arquivos inalterado.") +
                 (exportador is not null ? " Relatórios em: " + _pastaRelatorios.Text : "") +
-                (historico is not null ? " • Histórico salvo." : "");
+                (historico is not null ? " • Histórico salvo." :
+                    " • Histórico desativado nesta execução. Ative-o para selecionar arquivos para quarentena.");
             _dicas.SetToolTip(_estado, _estado.Text);
             double segundos = duracaoInventario.TotalSeconds;
             double taxaArquivos = segundos > 0 ? resultado.QuantidadeArquivos / segundos : 0;

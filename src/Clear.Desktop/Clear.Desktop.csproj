@@ -14,4 +14,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(ClearLayout)' == 'Lateral'">
+    <RuntimeHostConfigurationOption Include="Clear.LayoutSuperior" Value="false" />
+  </ItemGroup>
+
 </Project>
