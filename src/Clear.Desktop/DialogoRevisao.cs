@@ -3,16 +3,15 @@
 /// <summary>Confirmação explícita com conteúdo rolável e recusa como ação padrão.</summary>
 internal sealed class DialogoRevisao : Form
 {
-    public static DialogResult Confirmar(IWin32Window owner, string texto, string titulo,
-        MessageBoxButtons botoes, MessageBoxIcon icone, MessageBoxDefaultButton padrao)
+    public static DialogResult Confirmar(IWin32Window owner, string texto)
     {
-        using var janela = new DialogoRevisao(texto, titulo);
+        using var janela = new DialogoRevisao(texto);
         return janela.ShowDialog(owner);
     }
 
-    private DialogoRevisao(string texto, string titulo)
+    private DialogoRevisao(string texto)
     {
-        Text = titulo;
+        Text = "CLEAR";
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(640, 440);
         Size = new Size(840, 610);

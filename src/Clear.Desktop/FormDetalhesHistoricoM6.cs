@@ -77,7 +77,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         _execucao = execucao;
         _totalEntradas = execucao.EntradasPersistidas;
         Text = "CLEAR — Histórico e operações auditadas — " +
-               execucao.InicioUtc.ToString("dd/MM/yyyy HH:mm");
+               ApresentacaoResultados.HorarioLocal(execucao.InicioUtc);
         MinimumSize = new Size(950, 640);
         Size = new Size(1220, 770);
 
@@ -91,7 +91,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
         raiz.Controls.Add(new Label
         {
             Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 0, 0, 12),
-            Text = $"Análise salva em {execucao.InicioUtc:dd/MM/yyyy HH:mm} UTC | " +
+            Text = $"Análise salva em {ApresentacaoResultados.HorarioLocal(execucao.InicioUtc)} | " +
                    $"Estado: {execucao.Estado} | Entradas: {_totalEntradas:N0} | " +
                    $"Grupos: {execucao.GruposDuplicatas:N0}" + Environment.NewLine +
                    $"Origem da análise: {execucao.DiretorioRaiz}" + Environment.NewLine +
@@ -327,9 +327,21 @@ public sealed class FormDetalhesHistoricoM6 : Form
         _quarentena.Enabled = false;
         try
         {
-            // Etapa 1: somente pré-verificação. Não move nem registra ações.
-            var plano = await ServicoQuarentenaM7.PrepararAsync(
-                item, _execucao, _raizQuarentena);
+            var indisponiveis = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(
+                ServicoQuarentenaM7.BancoAuditoriaPadrao);
+            if (indisponiveis.Contains(item.Caminho))
+                throw new IOException("Já há uma movimentação ativa para esse caminho.");
+            var selecao = await ProtecaoDuplicatasNaQuarentena.PrepararAsync(
+                _banco, _execucao.Id, [item], indisponiveis);
+            if (selecao.Grupos.Count == 0)
+            {
+                MessageBox.Show(this, "Este arquivo precisa permanecer na origem como cópia do grupo.",
+                    "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var grupo = selecao.Grupos[0];
+            var plano = await ProtecaoDuplicatasNaQuarentena.PrepararMovimentoAsync(
+                grupo, item, _execucao, _raizQuarentena);
 
             // Etapa 2: a mudança de localização exige confirmação humana explícita.
             // O botão padrão é NÃO; fechar a janela também cancela.
@@ -343,12 +355,14 @@ public sealed class FormDetalhesHistoricoM6 : Form
                 "ANÁLISE: " + plano.IdExecucao + Environment.NewLine + Environment.NewLine +
                 "A quarentena não é exclusão. A restauração do M8 está disponível " +
                 "na aba de auditoria, mediante outra confirmação. Use somente dados sintéticos.",
-                "CLEAR — Confirmação humana obrigatória",
+                "CLEAR",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
             if (consentimento != DialogResult.Yes)
                 return;
 
+            await using var referencia = await ProtecaoDuplicatasNaQuarentena.AbrirReferenciaAsync(
+                grupo, _execucao.DiretorioRaiz);
             var registro = await ServicoQuarentenaM7.ExecutarAsync(
                 plano, confirmacaoHumanaExplicita: true,
                 ServicoQuarentenaM7.BancoAuditoriaPadrao);
@@ -436,7 +450,7 @@ public sealed class FormDetalhesHistoricoM6 : Form
                 "OPERAÇÃO: " + plano.IdOperacao + Environment.NewLine + Environment.NewLine +
                 "Não haverá substituição de arquivos existentes. " +
                 "Use apenas dados sintéticos até concluir a validação do M8.",
-                "CLEAR — Confirmação humana obrigatória",
+                "CLEAR",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
             if (resposta != DialogResult.Yes)
@@ -480,8 +494,8 @@ public sealed class FormDetalhesHistoricoM6 : Form
         _detalhes.Text =
             $"Caminho: {item.Caminho}" + Environment.NewLine +
             $"Tipo: {item.Tipo} | Tamanho: {item.TamanhoBytes?.ToString() ?? "N/D"} bytes" +
-            Environment.NewLine + $"Modificado em UTC: {item.ModificadoUtc}" +
-            Environment.NewLine + $"Último acesso registrado UTC: {item.AcessadoUtc ?? "Indisponível"}" +
+            Environment.NewLine + $"Modificação: {ApresentacaoResultados.HorarioLocal(item.ModificadoUtc)}" +
+            Environment.NewLine + $"Último acesso: {ApresentacaoResultados.HorarioLocal(item.AcessadoUtc)}" +
             Environment.NewLine + $"Acima do limite pessoal: {(item.AcimaDoLimitePessoal ? "Sim" : "Não")}" +
             Environment.NewLine + Environment.NewLine +
             "CATEGORIAS" + Environment.NewLine + FormatJson(item.CategoriasJson) +

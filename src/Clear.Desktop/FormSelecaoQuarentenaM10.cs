@@ -16,7 +16,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private readonly ResumoExecucaoHistoricaM6 _execucao;
     private readonly string _banco;
     private readonly string _destino;
-    private readonly HashSet<long> _selecionados = [];
+    private readonly Dictionary<long, (EntradaHistoricaM6 Entrada, long? Grupo)> _selecionados = [];
+    private readonly Dictionary<long, string> _protegidos = [];
     private readonly HashSet<string> _caminhosIndisponiveis = new(StringComparer.OrdinalIgnoreCase);
     private readonly ComboBox _categorias = new()
         { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
@@ -64,7 +65,10 @@ public sealed class FormSelecaoQuarentenaM10 : Form
     private long _totalFiltrado;
     private bool _carregando;
     private bool _executando;
+    private bool _ajustandoSelecao;
+    private bool _atualizandoGrade;
     private CancellationTokenSource? _cancelamento;
+    private bool PodeEditarSelecao => !_carregando && !_executando && !_ajustandoSelecao && _mover.Enabled;
 
     public FormSelecaoQuarentenaM10(
         ResumoExecucaoHistoricaM6 execucao, string banco, string destino)
@@ -135,8 +139,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _grade.Columns.Add("Caminho", "Arquivo");
         _grade.Columns.Add("Bytes", "Tamanho em bytes");
         _grade.Columns.Add("Categorias", "Classificações / indícios simultâneos");
-        _grade.Columns.Add("Acessado", "Último acesso UTC");
-        _grade.Columns.Add("Modificado", "Modificado UTC (auditoria)");
+        _grade.Columns.Add("Acessado", "Último acesso (horário local)");
+        _grade.Columns.Add("Modificado", "Modificação (horário local)");
         _grade.Columns.Add("Id", "ID");
         _grade.Columns["Id"]!.Visible = false;
         ((DataGridViewCheckBoxColumn)_grade.Columns["Marcado"]!).AutoSizeMode =
@@ -155,23 +159,47 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             if (_grade.IsCurrentCellDirty)
                 _grade.CommitEdit(DataGridViewDataErrorContexts.Commit);
         };
-        _grade.CellValueChanged += (_, e) =>
+        _grade.CellBeginEdit += (_, e) => e.Cancel = !PodeEditarSelecao;
+        _grade.CellValueChanged += async (_, e) =>
         {
-            if (_carregando || e.RowIndex < 0 || e.ColumnIndex != 0) return;
-            if (_grade.Rows[e.RowIndex].Cells["Id"].Value is not long id)
+            if (_atualizandoGrade || !PodeEditarSelecao || e.RowIndex < 0 || e.ColumnIndex != 0) return;
+            var linha = _grade.Rows[e.RowIndex];
+            if (linha.Tag is not EntradaHistoricaM6 entrada) return;
+            if (linha.Cells["Marcado"].Value is not true)
             {
-                _estado.Text = "Identificador do arquivo inválido; seleção não modificada.";
+                if (_selecionados.Remove(entrada.Id, out var removido) && removido.Grupo is { } grupo)
+                    _protegidos.Remove(grupo);
+                AtualizarSelecaoVisual();
+                ExibirEstado();
                 return;
             }
-            if (_grade.Rows[e.RowIndex].Cells["Marcado"].Value is true)
-                _selecionados.Add(id);
-            else
-                _selecionados.Remove(id);
-            ExibirEstado();
+            AtualizarSelecaoVisual();
+            await AjustarSelecaoAsync(async () =>
+            {
+                if (_selecionados.Count >= 10000)
+                    throw new InvalidOperationException("O lote não pode exceder 10.000 arquivos.");
+                if (!entrada.EhDuplicataExata)
+                {
+                    _selecionados[entrada.Id] = (entrada, null);
+                    return;
+                }
+                var caminhos = _selecionados.Values.Select(v => v.Entrada.Caminho)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var marcacao = await ProtecaoDuplicatasNaQuarentena.AvaliarMarcacaoAsync(
+                    _banco, _execucao.Id, entrada, caminhos, _caminhosIndisponiveis);
+                if (marcacao.CaminhoProtegido is { } protegido)
+                    _protegidos[marcacao.Grupo] = protegido;
+                else
+                    _protegidos.Remove(marcacao.Grupo);
+                if (!marcacao.Permitida)
+                    throw new InvalidOperationException("Para marcar esta cópia, desmarque outra do mesmo grupo.");
+                _selecionados[entrada.Id] = (entrada, marcacao.Grupo);
+            });
         };
 
         _buscar.Click += async (_, _) =>
         {
+            if (!PodeEditarSelecao) return;
             try
             {
                 _filtro = LerFiltros();
@@ -179,51 +207,47 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             }
             catch (Exception ex) { _estado.Text = "Filtros inválidos: " + ex.Message; }
         };
-        _anterior.Click += async (_, _) => await CarregarAsync(_pagina - 1);
-        _proximo.Click += async (_, _) => await CarregarAsync(_pagina + 1);
-        _selecionarPagina.Click += (_, _) =>
+        _anterior.Click += async (_, _) => { if (PodeEditarSelecao) await CarregarAsync(_pagina - 1); };
+        _proximo.Click += async (_, _) => { if (PodeEditarSelecao) await CarregarAsync(_pagina + 1); };
+        _selecionarPagina.Click += async (_, _) => await AjustarSelecaoAsync(async () =>
         {
-            if (_selecionados.Concat(_paginaAtual.Select(x => x.Id))
-                    .Distinct().Take(10001).Count() > 10000)
-            {
-                MessageBox.Show(this, "O lote não pode exceder 10.000 arquivos.");
-                return;
-            }
-            foreach (var item in _paginaAtual) _selecionados.Add(item.Id);
-            AtualizarMarcacoes();
-            ExibirEstado();
-        };
+            await AtualizarCaminhosIndisponiveisAsync();
+            await SelecionarEmLoteAsync(_paginaAtual.Select(x => x.Id));
+        });
         _selecionarTodos.Click += async (_, _) =>
         {
-            if (_executando || _carregando) return;
+            if (!PodeEditarSelecao) return;
             var resposta = MessageBox.Show(this,
                 "Selecionar TODOS os arquivos elegíveis que atendem aos filtros atuais? " +
-                "Limite: 10.000 itens por operação. Selecionar NÃO MOVIMENTA arquivos. " +
+                "O CLEAR reserva automaticamente uma cópia por grupo quando necessário. " +
+                "Limite: 10.000 itens por operação. " +
                 "A movimentação exigirá confirmação posterior.",
                 "CLEAR — Seleção global explícita", MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
             if (resposta != DialogResult.Yes) return;
-            try
+            await AjustarSelecaoAsync(async () =>
             {
                 await AtualizarCaminhosIndisponiveisAsync();
                 var encontrados = await ConsultaEntradasFiltradasM10.SelecionarTodosFiltradosAsync(
                     _banco, _execucao.Id, _filtro, _caminhosIndisponiveis);
-                if (_selecionados.Concat(encontrados).Distinct().Take(10001).Count() > 10000)
-                    throw new InvalidOperationException(
-                        "A seleção acumulada excede 10.000 arquivos. Limpe a seleção ou refine os filtros.");
-                foreach (var id in encontrados) _selecionados.Add(id);
-                AtualizarMarcacoes();
-                ExibirEstado();
-            }
-            catch (Exception ex) { _estado.Text = "Falha na seleção global: " + ex.Message; }
+                await SelecionarEmLoteAsync(encontrados);
+            });
         };
         _limpar.Click += (_, _) =>
         {
+            if (!PodeEditarSelecao) return;
             _selecionados.Clear();
-            AtualizarMarcacoes();
+            _protegidos.Clear();
+            AtualizarSelecaoVisual();
             ExibirEstado();
         };
-        _mover.Click += async (_, _) => await ExecutarSelecaoAsync();
+        _mover.Click += async (_, _) =>
+        {
+            if (!PodeEditarSelecao) return;
+            _mover.Enabled = false;
+            try { await ExecutarSelecaoAsync(); }
+            finally { _mover.Enabled = true; }
+        };
         _cancelar.Click += (_, _) => _cancelamento?.Cancel();
         TemaVisual.Registrar(this);
         Shown += async (_, _) => await CarregarAsync(0);
@@ -262,7 +286,8 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             ApenasAcimaLimite: _limite.Checked,
             TrechoCaminho: _trecho.Text.Trim(),
             ApenasSemAlertas: _categorias.Text == "Sem alertas detectados",
-            ApenasComAlertas: _categorias.Text == "Com indícios ou alertas");
+            ApenasComAlertas: _categorias.Text == "Com indícios ou alertas",
+            FusoHorarioAcesso: _filtrarData.Checked ? TimeZoneInfo.Local : null);
     }
 
     private async Task AtualizarCaminhosIndisponiveisAsync()
@@ -307,19 +332,81 @@ public sealed class FormSelecaoQuarentenaM10 : Form
 
     private void AtualizarMarcacoes()
     {
-        _carregando = true;
+        _atualizandoGrade = true;
         try
         {
             _grade.Rows.Clear();
             foreach (var e in _paginaAtual)
             {
-                _grade.Rows.Add(_selecionados.Contains(e.Id), e.Caminho,
+                var indice = _grade.Rows.Add(_selecionados.ContainsKey(e.Id), e.Caminho,
                     e.TamanhoBytes ?? 0,
                     TextoClassificacoes(e),
-                    e.AcessadoUtc ?? "Indisponível", e.ModificadoUtc ?? string.Empty, e.Id);
+                    ApresentacaoResultados.HorarioLocal(e.AcessadoUtc),
+                    ApresentacaoResultados.HorarioLocal(e.ModificadoUtc), e.Id);
+                _grade.Rows[indice].Tag = e;
             }
         }
-        finally { _carregando = false; }
+        finally { _atualizandoGrade = false; }
+        AtualizarSelecaoVisual();
+    }
+
+    private void AtualizarSelecaoVisual()
+    {
+        var protegidos = _protegidos.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _atualizandoGrade = true;
+        try
+        {
+            foreach (DataGridViewRow linha in _grade.Rows)
+            {
+                if (linha.Tag is not EntradaHistoricaM6 entrada) continue;
+                var protegido = protegidos.Contains(entrada.Caminho);
+                var marcador = linha.Cells["Marcado"];
+                marcador.Value = _selecionados.ContainsKey(entrada.Id);
+                marcador.ReadOnly = protegido;
+                marcador.ToolTipText = protegido ? "Desmarque outra cópia do grupo para selecionar esta." : "";
+                linha.Cells["Categorias"].Value = (protegido ? "MANTER NA ORIGEM | " : "") +
+                    TextoClassificacoes(entrada);
+            }
+        }
+        finally { _atualizandoGrade = false; }
+    }
+
+    private async Task AjustarSelecaoAsync(Func<Task> alterar)
+    {
+        if (!PodeEditarSelecao) return;
+        _ajustandoSelecao = true;
+        string? falha = null;
+        try { await alterar(); }
+        catch (Exception ex) { falha = ex.Message; }
+        finally { _ajustandoSelecao = false; }
+        AtualizarSelecaoVisual();
+        ExibirEstado(falha);
+    }
+
+    private async Task SelecionarEmLoteAsync(IEnumerable<long> novos)
+    {
+        var ids = _selecionados.Keys.Concat(novos).Distinct().Take(10001).ToArray();
+        if (ids.Length == 0) return;
+        if (ids.Length > 10000)
+            throw new InvalidOperationException("O lote não pode exceder 10.000 arquivos.");
+        var entradas = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(_banco, _execucao.Id, ids);
+        var disponiveis = entradas.Where(e => !_caminhosIndisponiveis.Contains(e.Caminho)).ToArray();
+        var plano = await ProtecaoDuplicatasNaQuarentena.PrepararAsync(_banco, _execucao.Id,
+            disponiveis, _caminhosIndisponiveis);
+        AplicarSelecao(plano);
+    }
+
+    private void AplicarSelecao(SelecaoQuarentenaProtegida plano)
+    {
+        _selecionados.Clear();
+        _protegidos.Clear();
+        foreach (var grupo in plano.Grupos)
+        {
+            var numeroGrupo = grupo.Referencias.FirstOrDefault()?.Grupo;
+            foreach (var entrada in grupo.Entradas) _selecionados.Add(entrada.Id, (entrada, numeroGrupo));
+        }
+        foreach (var referencia in plano.ReferenciasUnicas)
+            _protegidos.Add(referencia.Grupo, referencia.Caminho);
     }
 
     private static bool SemAlertasDetectados(EntradaHistoricaM6 e) =>
@@ -342,11 +429,11 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         return string.Join(" | ", marcadores);
     }
 
-    private void ExibirEstado() =>
-        _estado.Text = $"Disponíveis nos filtros: {_totalFiltrado:N0} | Disponíveis nesta página: {_paginaAtual.Count:N0}" +
-            $" | Página {_pagina + 1} | Marcados: {_selecionados.Count:N0}. " +
-            (_totalFiltrado == 0 ? "Nenhum arquivo disponível. Revise os filtros ou consulte a auditoria." :
-                "Itens em quarentena ficam ocultos. Sem alertas não significa aprovado.");
+    private void ExibirEstado(string? aviso = null) =>
+        _estado.Text = $"Disponíveis nos filtros: {_totalFiltrado:N0} | Página {_pagina + 1}" +
+            $" | Marcados para mover: {_selecionados.Count:N0} | Mantidos na origem: {_protegidos.Count:N0}. " +
+            (aviso ?? (_protegidos.Count > 0 ? "Para trocar a cópia mantida, desmarque outra do mesmo grupo." :
+                "Itens em quarentena ficam ocultos."));
 
     private async Task ExecutarSelecaoAsync()
     {
@@ -356,62 +443,68 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             MessageBox.Show(this, "Apenas análises concluídas podem enviar arquivos à quarentena.");
             return;
         }
-        var ids = _selecionados.OrderBy(x => x).ToArray();
-        // Não mudar a lista implicitamente após a autorização; o lote é
-        // exatamente a fotografia dos IDs marcados no momento da confirmação.
-        var quantidade = ids.Length;
-        if (quantidade > 10000)
+        var ids = _selecionados.Keys.OrderBy(x => x).ToArray();
+        if (ids.Length > 10000)
         {
             MessageBox.Show(this, "Limite por operação: 10.000 arquivos explicitamente marcados. " +
                 "Divida a seleção em lotes menores para facilitar auditoria e retomada.");
             return;
         }
-        IReadOnlyList<EntradaHistoricaM6> entradas;
-        long tamanho;
+        SelecaoQuarentenaProtegida selecao;
         try
         {
             await AtualizarCaminhosIndisponiveisAsync();
-            entradas = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(
+            var marcadas = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(
                 _banco, _execucao.Id, ids);
-            if (entradas.Any(e => _caminhosIndisponiveis.Contains(e.Caminho)))
+            if (marcadas.Any(e => _caminhosIndisponiveis.Contains(e.Caminho)))
                 throw new InvalidOperationException(
                     "Há arquivos já ocupados pela quarentena. Limpe a seleção e recarregue a lista.");
-            tamanho = entradas.Aggregate(0L,
-                (soma, e) => checked(soma + (e.TamanhoBytes ?? 0)));
+            selecao = await ProtecaoDuplicatasNaQuarentena.PrepararAsync(
+                _banco, _execucao.Id, marcadas, _caminhosIndisponiveis);
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, "Não foi possível preparar a prévia: " + ex.Message);
             return;
         }
+        AplicarSelecao(selecao);
+        AtualizarSelecaoVisual();
+        ExibirEstado();
+        var entradas = selecao.Grupos.SelectMany(g => g.Entradas).OrderBy(e => e.Id).ToArray();
+        var quantidade = entradas.Length;
+        if (quantidade == 0)
+        {
+            MessageBox.Show(this, "Os arquivos marcados são as cópias que precisam ficar na origem.",
+                "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var tamanho = entradas.Sum(e => e.TamanhoBytes ?? 0);
         var semAlertas = entradas.Count(SemAlertasDetectados);
-        var caminhosDeExemplo = string.Join(Environment.NewLine,
+        var caminhos = string.Join(Environment.NewLine,
             entradas.Select(e => "  • " + e.Caminho));
-        var avisoExcedentes = "";
+        var mantidos = selecao.ReferenciasUnicas.Count == 0 ? "" :
+            $"{selecao.ReferenciasUnicas.Count:N0} cópia(s) que permanecem na origem:" +
+            Environment.NewLine + string.Join(Environment.NewLine,
+                selecao.ReferenciasUnicas.Select(e => "  • " + e.Caminho)) + Environment.NewLine;
         var resposta = DialogoRevisao.Confirmar(this,
             $"CONFIRMAR A MOVIMENTAÇÃO PARA QUARENTENA DE {quantidade:N0} ARQUIVOS?" +
             Environment.NewLine + $"Total histórico: {tamanho:N0} bytes" +
             Environment.NewLine + $"Sem alertas detectados no lote: {semAlertas:N0} (não significa aprovado)." +
             Environment.NewLine + $"Origem da análise: {_execucao.DiretorioRaiz}" +
             Environment.NewLine + $"Raiz da quarentena: {_destino}" +
-            Environment.NewLine + "APENAS IDs INDIVIDUALMENTE SELECIONADOS." +
-            Environment.NewLine + "Todos os caminhos selecionados:" +
-            Environment.NewLine + caminhosDeExemplo + avisoExcedentes +
+            Environment.NewLine + mantidos + "Arquivos que serão movidos:" +
+            Environment.NewLine + caminhos +
             Environment.NewLine + Environment.NewLine +
             "Cada arquivo será revalidado pelo M7 (tamanho, data, SHA-256)." +
             Environment.NewLine +
             "Se algum arquivo mudou, somente esse item falhará. " +
             "Os sucessos anteriores NÃO serão revertidos automaticamente." +
             Environment.NewLine +
-            "Não haverá exclusões nem substituições. Negar NÃO altera arquivos.",
-            "CLEAR — Confirmação humana obrigatória de lote",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
+            "Não haverá exclusões nem substituições. Negar NÃO altera arquivos.");
         if (resposta != DialogResult.Yes) return;
 
         _executando = true;
         _cancelamento = new CancellationTokenSource();
-        _mover.Enabled = false;
         _cancelar.Enabled = true;
         _buscar.Enabled = false;
         _selecionarPagina.Enabled = false;
@@ -424,43 +517,47 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         _erros.Clear();
         try
         {
-            foreach (var entrada in entradas)
+            foreach (var grupo in selecao.Grupos)
             {
                 if (_cancelamento.IsCancellationRequested) break;
-                var id = entrada.Id;
+                FileStream? fluxoReferencia;
                 try
                 {
-                    var plano = await ServicoQuarentenaM7.PrepararAsync(
-                        entrada, _execucao, _destino, _cancelamento.Token);
-                    // Autorização global deste lote é explícita; não confundir
-                    // com seleção inferida automaticamente de filtros.
-                    await ServicoQuarentenaM7.ExecutarAsync(plano,
-                        confirmacaoHumanaExplicita: true,
-                        ServicoQuarentenaM7.BancoAuditoriaPadrao,
-                        _cancelamento.Token);
-                    sucesso++;
-                    _selecionados.Remove(id);
+                    fluxoReferencia = await ProtecaoDuplicatasNaQuarentena.AbrirReferenciaAsync(
+                        grupo, _execucao.DiretorioRaiz, _cancelamento.Token);
                 }
                 catch (OperationCanceledException) when (_cancelamento.IsCancellationRequested)
                 {
                     break;
                 }
-                catch (Exception ex)
+                catch (IOException ex)
                 {
-                    falha++;
-                    _erros.AppendText($"ID {id}: {ex.Message}" +
+                    falha += grupo.Entradas.Count;
+                    _erros.AppendText($"Grupo com {grupo.Entradas.Count:N0} arquivo(s): {ex.Message}" +
                         Environment.NewLine);
+                    foreach (var entrada in grupo.Entradas) RegistrarProgresso(entrada);
+                    continue;
                 }
-                finally
+                await using var referencia = fluxoReferencia;
+                foreach (var entrada in grupo.Entradas)
                 {
-                    processados++;
-                    bytesConcluidos += entrada.TamanhoBytes ?? 0;
-                    var eta = EstimativaRestante.Calcular(
-                        processados, quantidade, bytesConcluidos, tamanho, cronometro.Elapsed);
-                    _estado.Text = $"QUARENTENA: {processados:N0}/{quantidade:N0} revisados" +
-                        $" | {sucesso:N0} movidos | {falha:N0} falhas" +
-                        $" | decorrido {cronometro.Elapsed.ToString(@"hh\:mm\:ss")}" +
-                        $" | {EstimativaRestante.Exibir(eta)}";
+                    if (_cancelamento.IsCancellationRequested) break;
+                    try
+                    {
+                        var plano = await ProtecaoDuplicatasNaQuarentena.PrepararMovimentoAsync(
+                            grupo, entrada, _execucao, _destino, _cancelamento.Token);
+                        await ServicoQuarentenaM7.ExecutarAsync(plano, confirmacaoHumanaExplicita: true,
+                            ServicoQuarentenaM7.BancoAuditoriaPadrao, _cancelamento.Token);
+                        sucesso++;
+                        _selecionados.Remove(entrada.Id);
+                    }
+                    catch (OperationCanceledException) when (_cancelamento.IsCancellationRequested) { break; }
+                    catch (Exception ex)
+                    {
+                        falha++;
+                        _erros.AppendText($"ID {entrada.Id}: {ex.Message}" + Environment.NewLine);
+                    }
+                    finally { RegistrarProgresso(entrada); }
                 }
             }
         }
@@ -469,7 +566,6 @@ public sealed class FormSelecaoQuarentenaM10 : Form
             _cancelamento.Dispose();
             _cancelamento = null;
             _executando = false;
-            _mover.Enabled = true;
             _cancelar.Enabled = false;
             _buscar.Enabled = true;
             _selecionarPagina.Enabled = true;
@@ -480,10 +576,23 @@ public sealed class FormSelecaoQuarentenaM10 : Form
         }
         MessageBox.Show(this,
             $"Lote encerrado. Movidos: {sucesso:N0}. Falhas: {falha:N0}." +
+            Environment.NewLine + $"Cópias reservadas para permanecer na origem: {selecao.ReferenciasUnicas.Count:N0}." +
             Environment.NewLine + "Verifique a aba Auditoria da quarentena." +
             Environment.NewLine + "Nenhum item não selecionado foi movido.",
             "CLEAR — Resultado da seleção",
             MessageBoxButtons.OK, falha > 0 ? MessageBoxIcon.Warning
                                             : MessageBoxIcon.Information);
+
+        void RegistrarProgresso(EntradaHistoricaM6 entrada)
+        {
+            processados++;
+            bytesConcluidos += entrada.TamanhoBytes ?? 0;
+            var eta = EstimativaRestante.Calcular(
+                processados, quantidade, bytesConcluidos, tamanho, cronometro.Elapsed);
+            _estado.Text = $"QUARENTENA: {processados:N0}/{quantidade:N0} revisados" +
+                $" | {sucesso:N0} movidos | {falha:N0} falhas" +
+                $" | decorrido {cronometro.Elapsed.ToString(@"hh\:mm\:ss")}" +
+                $" | {EstimativaRestante.Exibir(eta)}";
+        }
     }
 }

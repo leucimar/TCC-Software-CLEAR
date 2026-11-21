@@ -355,7 +355,7 @@ public static class ServicoQuarentenaM7
             throw new IOException("Arquivo modificado desde a análise; reanalise antes de prosseguir.");
     }
 
-    private static bool EstaDentro(string caminho, string raiz)
+    internal static bool EstaDentro(string caminho, string raiz)
     {
         var relativo = Path.GetRelativePath(raiz, caminho);
         return !Path.IsPathRooted(relativo)
@@ -363,7 +363,7 @@ public static class ServicoQuarentenaM7
             && !relativo.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 
-    private static void VerificarCaminhoSeguro(string caminho, bool arquivo)
+    internal static void VerificarCaminhoSeguro(string caminho, bool arquivo)
     {
         var completo = Path.GetFullPath(caminho);
         if (arquivo)

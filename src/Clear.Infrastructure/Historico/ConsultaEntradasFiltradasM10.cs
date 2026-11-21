@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Clear.Infrastructure.Historico;
@@ -19,7 +20,8 @@ public sealed record FiltrosEntradasM10(
     bool ApenasAcimaLimite = false,
     string? TrechoCaminho = null,
     bool ApenasSemAlertas = false,
-    bool ApenasComAlertas = false);
+    bool ApenasComAlertas = false,
+    TimeZoneInfo? FusoHorarioAcesso = null);
 
 public static class ConsultaEntradasFiltradasM10
 {
@@ -41,8 +43,8 @@ public static class ConsultaEntradasFiltradasM10
         AND ($ext = '' OR lower(substr(e.caminho, -length($ext))) = lower($ext))
         AND ($minimo < 0 OR e.tamanho_bytes >= $minimo)
         AND ($maximo < 0 OR e.tamanho_bytes <= $maximo)
-        AND ($desde = '' OR substr(e.acessado_utc, 1, 10) >= $desde)
-        AND ($ate = '' OR substr(e.acessado_utc, 1, 10) <= $ate)
+        AND ($desde = '' OR dia_acesso(e.acessado_utc) >= $desde)
+        AND ($ate = '' OR dia_acesso(e.acessado_utc) <= $ate)
         AND ($incomp = 0 OR EXISTS
              (SELECT 1 FROM json_each(e.verificacoes_json) AS v
               WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada'))
@@ -70,6 +72,7 @@ public static class ConsultaEntradasFiltradasM10
     {
         Validar(execucao, filtro, pagina);
         await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        ConfigurarDiaAcesso(db, filtro.FusoHorarioAcesso);
         var condicoes = Condicoes;
         if (caminhosIndisponiveis is { Count: > 0 })
         {
@@ -122,6 +125,7 @@ public static class ConsultaEntradasFiltradasM10
         Validar(execucao, filtro, 0);
         ArgumentNullException.ThrowIfNull(caminhosIndisponiveis);
         await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        ConfigurarDiaAcesso(db, filtro.FusoHorarioAcesso);
         await using var cmd = db.CreateCommand();
         cmd.CommandText = "SELECT e.id, e.caminho FROM entradas AS e WHERE " + Condicoes +
             " ORDER BY e.id";
@@ -203,6 +207,32 @@ public static class ConsultaEntradasFiltradasM10
         return encontrados.AsReadOnly();
     }
 
+    internal static async Task<IReadOnlyList<MembroDuplicataHistoricaM6>> ConsultarGruposSelecionadosAsync(
+        string banco, string execucao, IReadOnlyCollection<string> caminhos, CancellationToken token)
+    {
+        if (caminhos.Count == 0) return [];
+        await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT g.ordem, g.tamanho_bytes, g.sha256, g.bytes_potenciais, m.caminho
+            FROM grupos_duplicatas g
+            JOIN membros_duplicatas m ON m.execucao_id = g.execucao_id AND m.ordem_grupo = g.ordem
+            WHERE g.execucao_id = $exec AND g.ordem IN (
+                SELECT s.ordem_grupo FROM membros_duplicatas s WHERE s.execucao_id = $exec
+                AND s.caminho IN (SELECT value FROM json_each($caminhos))
+            )
+            ORDER BY g.ordem, m.caminho;
+            """;
+        cmd.Parameters.AddWithValue("$exec", execucao);
+        cmd.Parameters.AddWithValue("$caminhos", JsonSerializer.Serialize(caminhos));
+        var membros = new List<MembroDuplicataHistoricaM6>();
+        await using var leitor = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false);
+        while (await leitor.ReadAsync(token).ConfigureAwait(false))
+            membros.Add(new(leitor.GetInt64(0), leitor.GetInt64(1), leitor.GetString(2),
+                leitor.GetInt64(3), leitor.GetString(4)));
+        return membros;
+    }
+
     private static EntradaHistoricaM6 Mapear(SqliteDataReader r) => new(
         r.GetInt64(0), r.GetString(1), r.GetString(2),
         r.IsDBNull(3) ? null : r.GetInt64(3),
@@ -225,6 +255,18 @@ public static class ConsultaEntradasFiltradasM10
             throw new ArgumentException("Escolha somente um filtro de alertas.");
         if (filtro.AcessadoDesde > filtro.AcessadoAte)
             throw new ArgumentException("Intervalo de datas inválido.");
+    }
+
+    private static void ConfigurarDiaAcesso(SqliteConnection db, TimeZoneInfo? fuso)
+    {
+        db.CreateFunction<string?, string?>("dia_acesso", valor =>
+        {
+            if (fuso is null) return valor is { Length: > 10 } ? valor[..10] : valor;
+            return DateTimeOffset.TryParse(valor, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal, out var instante)
+                ? TimeZoneInfo.ConvertTime(instante, fuso).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : null;
+        }, isDeterministic: true);
     }
 
     private static void Parametros(SqliteCommand cmd, string id, FiltrosEntradasM10 f)

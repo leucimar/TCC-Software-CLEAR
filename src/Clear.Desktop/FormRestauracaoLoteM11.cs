@@ -295,10 +295,7 @@ public sealed class FormRestauracaoLoteM11 : Form
             "deverá estar livre e nenhum arquivo será sobrescrito. " +
             "Após restauração e auditoria confirmadas, pastas VAZIAS da " +
             "quarentena poderão ser removidas. Sucessos anteriores não " +
-            "serão revertidos se outro arquivo falhar.",
-            "CLEAR — CONFIRMAÇÃO HUMANA DE RESTAURAÇÃO EM LOTE",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
+            "serão revertidos se outro arquivo falhar.");
         if (resposta != DialogResult.Yes) return;
 
         HabilitarExecucao(true);

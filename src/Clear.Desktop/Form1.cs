@@ -114,7 +114,8 @@ public partial class Form1 : Form
         Dock = DockStyle.Fill, ReadOnly = true, MultiSelect = false,
         AllowUserToAddRows = false, AllowUserToDeleteRows = false,
         RowHeadersVisible = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
+        AutoGenerateColumns = false, AllowUserToResizeColumns = true,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect
     };
     private readonly DataGridView _gradeDuplicatas = new()
@@ -185,6 +186,7 @@ public partial class Form1 : Form
     private void MontarInterface()
     {
         MontarApresentacao();
+        ConfigurarColunasHistorico();
 
         _semDestino.CheckedChanged += (_, _) =>
         {
@@ -255,7 +257,7 @@ public partial class Form1 : Form
                 ["Tipo"] = 75, ["Caminho"] = 300, ["Bytes"] = 100,
                 ["IndiciosGerais"] = 185, ["Compatibilidade"] = 220,
                 ["Justificativas"] = 380, ["FiltroPersonalizado"] = 160,
-                ["ModificadoUtc"] = 180
+                ["ModificadoUtc"] = 220, ["UltimoAcessoUtc"] = 220
             };
             foreach (DataGridViewColumn coluna in _grade.Columns)
                 if (larguras.TryGetValue(coluna.Name, out var largura))
@@ -343,6 +345,31 @@ public partial class Form1 : Form
         janela.ShowDialog(this);
     }
 
+    private void ConfigurarColunasHistorico()
+    {
+        foreach (var (campo, largura) in new (string, int)[]
+        {
+            (nameof(ResumoExecucaoHistoricaM6.InicioUtc), 225),
+            (nameof(ResumoExecucaoHistoricaM6.FimUtc), 225),
+            (nameof(ResumoExecucaoHistoricaM6.Estado), 115),
+            (nameof(ResumoExecucaoHistoricaM6.DiretorioRaiz), 350),
+            (nameof(ResumoExecucaoHistoricaM6.QuantidadeArquivos), 160),
+            (nameof(ResumoExecucaoHistoricaM6.QuantidadeDiretorios), 160),
+            (nameof(ResumoExecucaoHistoricaM6.TotalBytes), 135),
+            (nameof(ResumoExecucaoHistoricaM6.EntradasPersistidas), 140),
+            (nameof(ResumoExecucaoHistoricaM6.GruposDuplicatas), 150),
+            (nameof(ResumoExecucaoHistoricaM6.TotalOcorrencias), 140),
+            (nameof(ResumoExecucaoHistoricaM6.Id), 240)
+        })
+        {
+            _gradeHistorico.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = campo, DataPropertyName = campo, Width = largura,
+                Resizable = DataGridViewTriState.True, SortMode = DataGridViewColumnSortMode.Automatic
+            });
+        }
+    }
+
     private async Task AtualizarHistoricoAsync()
     {
         _atualizarHistorico.Enabled = false;
@@ -351,13 +378,7 @@ public partial class Form1 : Form
             var registros = await SessaoHistoricoSqliteM6.ConsultarUltimasAsync(
                 SessaoHistoricoSqliteM6.CaminhoPadrao);
             _execucoesHistoricas = registros;
-            _gradeHistorico.DataSource = registros.Select(x => new
-            {
-                x.InicioUtc, x.FimUtc, x.Estado, x.DiretorioRaiz,
-                x.QuantidadeArquivos, x.QuantidadeDiretorios, x.TotalBytes,
-                x.EntradasPersistidas, x.GruposDuplicatas, x.TotalOcorrencias,
-                x.Id
-            }).ToList();
+            _gradeHistorico.DataSource = registros.ToList();
             _infoHistorico.Text =
                 $"{registros.Count} execução(ões). Selecione uma e clique Consultar detalhes. Banco: " +
                 SessaoHistoricoSqliteM6.CaminhoPadrao +
@@ -592,7 +613,8 @@ public partial class Form1 : Form
         var exportarRelatorio = _exportarRelatorio.Checked;
         var salvarHistorico = _salvarHistorico.Checked;
         var diasSelecionados = (int)_dias.Value;
-        var referenciaTemporalUtc = DateTimeOffset.UtcNow;
+        var referenciaTemporalLocal = DateTimeOffset.Now;
+        var referenciaTemporalUtc = referenciaTemporalLocal.ToUniversalTime();
         ExportadorRelatoriosM5? exportador = null;
         SessaoHistoricoSqliteM6? historico = null;
         CheckpointAnaliseM9? checkpoint = null;
@@ -605,7 +627,7 @@ public partial class Form1 : Form
                 identificarVazios,
                 identificarTemporarios,
                 usarSinalTemporal ? diasSelecionados : null,
-                referenciaTemporalUtc, criterioSelecionado);
+                referenciaTemporalLocal, criterioSelecionado);
             ValidarDestinoSaida(pasta, caminhoAuditoria, exigirMesmoVolume: false);
             Directory.CreateDirectory(Path.GetDirectoryName(caminhoAuditoria)!);
             // A análise é somente leitura. O destino de quarentena é validado
