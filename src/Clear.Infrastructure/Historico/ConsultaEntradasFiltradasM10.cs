@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Clear.Infrastructure.Historico;
@@ -19,7 +20,9 @@ public sealed record FiltrosEntradasM10(
     bool ApenasAcimaLimite = false,
     string? TrechoCaminho = null,
     bool ApenasSemAlertas = false,
-    bool ApenasComAlertas = false);
+    bool ApenasComAlertas = false,
+    TimeZoneInfo? FusoHorarioAcesso = null, long? GrupoDuplicata = null,
+    bool IncluirDiretorios = false);
 
 public static class ConsultaEntradasFiltradasM10
 {
@@ -30,25 +33,30 @@ public static class ConsultaEntradasFiltradasM10
         CASE WHEN e.caminho IN
           (SELECT caminho FROM membros_duplicatas WHERE execucao_id = $exec)
           THEN 1 ELSE 0 END AS eh_duplicata,
-        e.acessado_utc
+        e.acessado_utc,
+        (SELECT m.ordem_grupo FROM membros_duplicatas m
+         WHERE m.execucao_id = $exec AND m.caminho = e.caminho LIMIT 1)
         """;
 
     private const string Condicoes = """
-        e.execucao_id = $exec AND e.tipo = 'Arquivo'
+        e.execucao_id = $exec AND ($diretorios = 1 OR e.tipo = 'Arquivo')
         AND ($cat = '' OR EXISTS
              (SELECT 1 FROM json_each(e.categorias_json) AS c
               WHERE c.value = $cat))
         AND ($ext = '' OR lower(substr(e.caminho, -length($ext))) = lower($ext))
         AND ($minimo < 0 OR e.tamanho_bytes >= $minimo)
         AND ($maximo < 0 OR e.tamanho_bytes <= $maximo)
-        AND ($desde = '' OR substr(e.acessado_utc, 1, 10) >= $desde)
-        AND ($ate = '' OR substr(e.acessado_utc, 1, 10) <= $ate)
+        AND ($desde = '' OR dia_acesso(e.acessado_utc) >= $desde)
+        AND ($ate = '' OR dia_acesso(e.acessado_utc) <= $ate)
         AND ($incomp = 0 OR EXISTS
              (SELECT 1 FROM json_each(e.verificacoes_json) AS v
               WHERE json_extract(v.value, '$.Estado') = 'IncompatibilidadeDocumentada'))
         AND ($dup = 0 OR e.caminho IN
              (SELECT m.caminho FROM membros_duplicatas AS m
               WHERE m.execucao_id = $exec))
+        AND ($grupo = 0 OR e.caminho IN
+             (SELECT m.caminho FROM membros_duplicatas AS m
+              WHERE m.execucao_id = $exec AND m.ordem_grupo = $grupo))
         AND ($limite = 0 OR e.acima_limite_pessoal = 1)
         AND ($trecho = '' OR instr(lower(e.caminho), lower($trecho)) > 0)
         AND ($sem = 0 OR (
@@ -66,29 +74,14 @@ public static class ConsultaEntradasFiltradasM10
     public static async Task<(IReadOnlyList<EntradaHistoricaM6> Entradas, long Total)>
         ConsultarAsync(string banco, string execucao, FiltrosEntradasM10 filtro,
             int pagina, CancellationToken token = default,
-            IReadOnlySet<string>? caminhosIndisponiveis = null)
+            IReadOnlySet<string>? caminhosIndisponiveis = null,
+            IReadOnlySet<string>? caminhosIncluidos = null)
     {
         Validar(execucao, filtro, pagina);
         await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
-        var condicoes = Condicoes;
-        if (caminhosIndisponiveis is { Count: > 0 })
-        {
-            // A exclusão precisa preceder COUNT/LIMIT, para não produzir páginas vazias.
-            // A tabela é temporária e não modifica o histórico aberto somente para leitura.
-            await using var criar = db.CreateCommand();
-            criar.CommandText = "CREATE TEMP TABLE indisponiveis(caminho TEXT PRIMARY KEY COLLATE NOCASE);";
-            await criar.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-            await using var inserir = db.CreateCommand();
-            inserir.CommandText = "INSERT OR IGNORE INTO temp.indisponiveis VALUES ($c);";
-            var parametro = inserir.Parameters.Add("$c", SqliteType.Text);
-            foreach (var caminho in caminhosIndisponiveis)
-            {
-                token.ThrowIfCancellationRequested();
-                parametro.Value = caminho;
-                await inserir.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-            }
-            condicoes += " AND NOT EXISTS (SELECT 1 FROM temp.indisponiveis i WHERE i.caminho = e.caminho)";
-        }
+        ConfigurarDiaAcesso(db, filtro.FusoHorarioAcesso);
+        var condicoes = await PrepararSituacaoAsync(db, caminhosIndisponiveis,
+            caminhosIncluidos, token).ConfigureAwait(false);
         await using var contagem = db.CreateCommand();
         contagem.CommandText = "SELECT COUNT(*) FROM entradas AS e WHERE " + condicoes;
         Parametros(contagem, execucao, filtro);
@@ -97,7 +90,7 @@ public static class ConsultaEntradasFiltradasM10
             CultureInfo.InvariantCulture);
         await using var cmd = db.CreateCommand();
         cmd.CommandText = $"SELECT {Colunas} FROM entradas AS e WHERE " + condicoes +
-            " ORDER BY e.id LIMIT $lim OFFSET $offset";
+            " ORDER BY e.caminho, e.id LIMIT $lim OFFSET $offset";
         Parametros(cmd, execucao, filtro);
         cmd.Parameters.AddWithValue("$lim", ConsultaHistoricoSqliteM6.TamanhoPagina);
         cmd.Parameters.AddWithValue("$offset",
@@ -117,27 +110,61 @@ public static class ConsultaEntradasFiltradasM10
     /// </summary>
     public static async Task<IReadOnlyList<long>> SelecionarTodosFiltradosAsync(
         string banco, string execucao, FiltrosEntradasM10 filtro,
-        IReadOnlySet<string> caminhosIndisponiveis, CancellationToken token = default)
+        IReadOnlySet<string> caminhosIndisponiveis, CancellationToken token = default,
+        IReadOnlySet<string>? caminhosIncluidos = null)
     {
         Validar(execucao, filtro, 0);
         ArgumentNullException.ThrowIfNull(caminhosIndisponiveis);
         await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        ConfigurarDiaAcesso(db, filtro.FusoHorarioAcesso);
+        var condicoes = await PrepararSituacaoAsync(db, caminhosIndisponiveis,
+            caminhosIncluidos, token).ConfigureAwait(false);
         await using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT e.id, e.caminho FROM entradas AS e WHERE " + Condicoes +
-            " ORDER BY e.id";
+        cmd.CommandText = "SELECT e.id FROM entradas AS e WHERE " + condicoes +
+            " AND e.tipo = 'Arquivo' ORDER BY e.id LIMIT 10001";
         Parametros(cmd, execucao, filtro);
         var ids = new List<long>();
         await using var reader = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false);
         while (await reader.ReadAsync(token).ConfigureAwait(false))
         {
-            if (caminhosIndisponiveis.Contains(reader.GetString(1)))
-                continue;
             ids.Add(reader.GetInt64(0));
             if (ids.Count > 10000)
                 throw new InvalidOperationException(
                     "Mais de 10.000 arquivos elegíveis. Refine os filtros ou divida em lotes.");
         }
         return ids.AsReadOnly();
+    }
+
+    public static async Task<int> ContarMarcadosVisiveisAsync(string banco, string execucao,
+        FiltrosEntradasM10 filtro, IReadOnlyCollection<long> ids, CancellationToken token = default)
+    {
+        if (ids.Count == 0) return 0;
+        Validar(execucao, filtro, 0);
+        await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        ConfigurarDiaAcesso(db, filtro.FusoHorarioAcesso);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM entradas AS e WHERE " + Condicoes +
+            " AND e.id IN (SELECT value FROM json_each($ids));";
+        Parametros(cmd, execucao, filtro);
+        cmd.Parameters.AddWithValue("$ids", JsonSerializer.Serialize(ids));
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(token).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string> PrepararSituacaoAsync(SqliteConnection db,
+        IReadOnlySet<string>? excluidos, IReadOnlySet<string>? incluidos, CancellationToken token)
+    {
+        var caminhos = incluidos ?? excluidos;
+        if (caminhos is null || caminhos.Count == 0)
+            return Condicoes + (incluidos is null ? "" : " AND 0");
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = "CREATE TEMP TABLE caminhos_situacao(caminho TEXT PRIMARY KEY COLLATE NOCASE);";
+        await cmd.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        cmd.CommandText = "INSERT OR IGNORE INTO temp.caminhos_situacao SELECT value FROM json_each($caminhos);";
+        cmd.Parameters.AddWithValue("$caminhos", JsonSerializer.Serialize(caminhos));
+        await cmd.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        const string existe = " EXISTS (SELECT 1 FROM temp.caminhos_situacao s WHERE s.caminho = e.caminho)";
+        return Condicoes + (incluidos is null ? " AND NOT" : " AND") + existe;
     }
 
     public static async Task<EntradaHistoricaM6> ConsultarPorIdAsync(
@@ -203,13 +230,40 @@ public static class ConsultaEntradasFiltradasM10
         return encontrados.AsReadOnly();
     }
 
+    internal static async Task<IReadOnlyList<MembroDuplicataHistoricaM6>> ConsultarGruposSelecionadosAsync(
+        string banco, string execucao, IReadOnlyCollection<string> caminhos, CancellationToken token)
+    {
+        if (caminhos.Count == 0) return [];
+        await using var db = await AbrirAsync(banco, token).ConfigureAwait(false);
+        await using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT g.ordem, g.tamanho_bytes, g.sha256, g.bytes_potenciais, m.caminho
+            FROM grupos_duplicatas g
+            JOIN membros_duplicatas m ON m.execucao_id = g.execucao_id AND m.ordem_grupo = g.ordem
+            WHERE g.execucao_id = $exec AND g.ordem IN (
+                SELECT s.ordem_grupo FROM membros_duplicatas s WHERE s.execucao_id = $exec
+                AND s.caminho IN (SELECT value FROM json_each($caminhos))
+            )
+            ORDER BY g.ordem, m.caminho;
+            """;
+        cmd.Parameters.AddWithValue("$exec", execucao);
+        cmd.Parameters.AddWithValue("$caminhos", JsonSerializer.Serialize(caminhos));
+        var membros = new List<MembroDuplicataHistoricaM6>();
+        await using var leitor = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false);
+        while (await leitor.ReadAsync(token).ConfigureAwait(false))
+            membros.Add(new(leitor.GetInt64(0), leitor.GetInt64(1), leitor.GetString(2),
+                leitor.GetInt64(3), leitor.GetString(4)));
+        return membros;
+    }
+
     private static EntradaHistoricaM6 Mapear(SqliteDataReader r) => new(
         r.GetInt64(0), r.GetString(1), r.GetString(2),
         r.IsDBNull(3) ? null : r.GetInt64(3),
         r.IsDBNull(4) ? null : r.GetString(4),
         r.GetString(5), r.GetString(6), r.GetString(7),
         r.GetInt64(8) == 1, r.GetInt64(9) == 1,
-        r.IsDBNull(10) ? null : r.GetString(10));
+        r.IsDBNull(10) ? null : r.GetString(10),
+        r.IsDBNull(11) ? null : r.GetInt64(11));
 
     private static void Validar(string execucao, FiltrosEntradasM10 filtro, int pagina)
     {
@@ -227,6 +281,18 @@ public static class ConsultaEntradasFiltradasM10
             throw new ArgumentException("Intervalo de datas inválido.");
     }
 
+    private static void ConfigurarDiaAcesso(SqliteConnection db, TimeZoneInfo? fuso)
+    {
+        db.CreateFunction<string?, string?>("dia_acesso", valor =>
+        {
+            if (fuso is null) return valor is { Length: > 10 } ? valor[..10] : valor;
+            return DateTimeOffset.TryParse(valor, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal, out var instante)
+                ? TimeZoneInfo.ConvertTime(instante, fuso).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : null;
+        }, isDeterministic: true);
+    }
+
     private static void Parametros(SqliteCommand cmd, string id, FiltrosEntradasM10 f)
     {
         cmd.Parameters.AddWithValue("$exec", id);
@@ -240,6 +306,8 @@ public static class ConsultaEntradasFiltradasM10
             CultureInfo.InvariantCulture) ?? "");
         cmd.Parameters.AddWithValue("$incomp", f.ApenasIncompatibilidades ? 1 : 0);
         cmd.Parameters.AddWithValue("$dup", f.ApenasDuplicatas ? 1 : 0);
+        cmd.Parameters.AddWithValue("$grupo", f.GrupoDuplicata ?? 0);
+        cmd.Parameters.AddWithValue("$diretorios", f.IncluirDiretorios ? 1 : 0);
         cmd.Parameters.AddWithValue("$limite", f.ApenasAcimaLimite ? 1 : 0);
         cmd.Parameters.AddWithValue("$trecho", f.TrechoCaminho ?? "");
         cmd.Parameters.AddWithValue("$sem", f.ApenasSemAlertas ? 1 : 0);

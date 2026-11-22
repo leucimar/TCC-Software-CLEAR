@@ -6,7 +6,8 @@ namespace Clear.Domain.Compatibilidade;
 /// </summary>
 public sealed class ConfiguracaoCompatibilidade
 {
-    public ConfiguracaoCompatibilidade(PerfilDestino? perfil, IEnumerable<string> codigosHabilitados)
+    public ConfiguracaoCompatibilidade(PerfilDestino? perfil, IEnumerable<string> codigosHabilitados,
+        string? caminhoBibliotecaDecodificado = null, string? subpastaDestino = null)
     {
         ArgumentNullException.ThrowIfNull(codigosHabilitados);
         var codigos = codigosHabilitados.ToArray();
@@ -33,7 +34,39 @@ public sealed class ConfiguracaoCompatibilidade
         }
 
         Perfil = perfil;
+        CaminhoBibliotecaDecodificado = NormalizarPrefixo(caminhoBibliotecaDecodificado);
+        SubpastaDestino = NormalizarPrefixo(subpastaDestino);
         CodigosHabilitados = Array.AsReadOnly(codigos);
+    }
+
+    // Null representa uma localização desconhecida. O prefixo vazio representa a raiz.
+    public string? CaminhoBibliotecaDecodificado { get; }
+    public string? SubpastaDestino { get; }
+    public string? PrefixoProjetado => Perfil?.Ambiente switch
+    {
+        AmbienteDestino.AzureFilesClassicoSmb => SubpastaDestino,
+        AmbienteDestino.SharePointOneDriveEmpresarial
+            when !string.IsNullOrEmpty(CaminhoBibliotecaDecodificado) && SubpastaDestino is not null
+            => SubpastaDestino.Length == 0 ? CaminhoBibliotecaDecodificado
+                : CaminhoBibliotecaDecodificado + "/" + SubpastaDestino,
+        _ => null
+    };
+
+    private static string? NormalizarPrefixo(string? caminho)
+    {
+        if (caminho is null)
+            return null;
+        if (caminho.StartsWith("//", StringComparison.Ordinal) ||
+            caminho.StartsWith(@"\\", StringComparison.Ordinal) ||
+            caminho.IndexOfAny(new[] { ':', '?', '*', '"', '<', '>', '|' }) >= 0 ||
+            caminho.Any(char.IsControl))
+            throw new ArgumentException("Informe somente pastas do destino, sem URL completa, UNC ou letra de unidade.");
+
+        var normalizado = caminho.Replace('\\', '/').Trim('/');
+        if (normalizado.Length > 0 && normalizado.Split('/').Any(
+                parte => parte.Length == 0 || parte is "." or ".."))
+            throw new ArgumentException("Informe uma hierarquia de pastas sem segmentos vazios, '.' ou '..'.");
+        return normalizado;
     }
 
     public PerfilDestino? Perfil { get; }

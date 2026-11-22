@@ -1,4 +1,8 @@
-﻿using System.Diagnostics;
+using Clear.Domain.Arquivos;
+using Clear.Infrastructure.Arquivos;
+using Clear.Application.Metricas;
+using Clear.Infrastructure.Metricas;
+using System.Diagnostics;
 using Clear.Application.Inventario;
 using Clear.Application.Progresso;
 using Clear.Application.Compatibilidade;
@@ -39,21 +43,8 @@ public partial class Form1 : Form
     private readonly Button _cancelar = new() { Text = "Cancelar", Dock = DockStyle.Fill, Enabled = false };
     private readonly Button _criarSubBase = new()
         { Text = "Criar sub-base experimental (SOMENTE CÓPIA)", AutoSize = true };
-    private readonly Label _resumo = new() { Dock = DockStyle.Fill };
     private readonly Label _estado = new() { Dock = DockStyle.Fill, AutoEllipsis = true };
     private readonly ToolTip _dicas = new();
-    private readonly DataGridView _grade = new()
-    {
-        Dock = DockStyle.Fill,
-        ReadOnly = true,
-        AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false,
-        RowHeadersVisible = false,
-        MultiSelect = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect
-    };
-    private readonly ListBox _ocorrencias = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true };
     private readonly CheckBox _ativarDuplicatas = new()
     {
         Text = "Detectar duplicatas exatas (SHA-256; leitura do conteúdo)",
@@ -68,13 +59,6 @@ public partial class Form1 : Form
         { Text = "Salvar progresso para reinício seguro (M9; sem cache)", AutoSize = true };
     private readonly Button _reiniciarInterrompida = new()
         { Text = "Reiniciar análise interrompida (do início)", AutoSize = true };
-    private readonly TextBox _metricasM9 = new()
-    {
-        Dock = DockStyle.Fill, ReadOnly = true, Multiline = true,
-        ScrollBars = ScrollBars.Vertical,
-        Text = "M9: execute uma análise para ver durações e taxas observadas. " +
-               "Os resultados dependem do hardware e dos dados usados."
-    };
     private readonly CheckBox _exportarRelatorio = new()
     {
         Text = "Exportar relatório completo (CSV + JSON — M5)",
@@ -84,50 +68,6 @@ public partial class Form1 : Form
     {
         DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, Enabled = false
     };
-    private readonly CheckBox _salvarHistorico = new()
-    {
-        Text = "Salvar histórico local SQLite (M6; não reutiliza classificações)",
-        AutoSize = true, Checked = false
-    };
-    private readonly Button _atualizarHistorico = new()
-    {
-        Text = "Atualizar histórico", AutoSize = true
-    };
-    private readonly Button _consultarDetalhesHistorico = new()
-    {
-        Text = "Consultar detalhes da execução", AutoSize = true
-    };
-    private IReadOnlyList<ResumoExecucaoHistoricaM6> _execucoesHistoricas =
-        Array.Empty<ResumoExecucaoHistoricaM6>();
-    private readonly Label _infoHistorico = new()
-    {
-        Dock = DockStyle.Fill,
-        Text = "Histórico opcional armazenado em %LOCALAPPDATA%\\CLEAR\\historico.sqlite3.",
-        AutoEllipsis = true
-    };
-    private readonly DataGridView _gradeHistorico = new()
-    {
-        Dock = DockStyle.Fill, ReadOnly = true, MultiSelect = false,
-        AllowUserToAddRows = false, AllowUserToDeleteRows = false,
-        RowHeadersVisible = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect
-    };
-    private readonly DataGridView _gradeDuplicatas = new()
-    {
-        Dock = DockStyle.Fill, ReadOnly = true,
-        AllowUserToAddRows = false, AllowUserToDeleteRows = false,
-        RowHeadersVisible = false, MultiSelect = false,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
-    };
-    private readonly Label _resumoDuplicatas = new()
-    {
-        Dock = DockStyle.Fill,
-        Text = "Busca de duplicatas desativada. Marque o filtro geral para habilitar.",
-        AutoEllipsis = true
-    };
-
     private readonly RadioButton _semDestino = new()
         { Text = "Sem destino (análise geral)", AutoSize = true, Checked = true };
     private readonly RadioButton _azure = new()
@@ -141,12 +81,12 @@ public partial class Form1 : Form
         { Text = "Azure Files — SMB/Windows", Dock = DockStyle.Fill };
     private readonly GroupBox _grupoSharePoint = new()
         { Text = "SharePoint Online / OneDrive empresarial", Dock = DockStyle.Fill };
-    private readonly FlowLayoutPanel _painelAzure = new()
-        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
-    private readonly FlowLayoutPanel _painelSharePoint = new()
-        { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown,
-          WrapContents = false, AutoScroll = true, Padding = new Padding(8) };
+    private readonly Label _rotuloBibliotecaDestino = Legenda("Biblioteca do SharePoint");
+    private readonly TextBox _caminhoBiblioteca = new()
+        { PlaceholderText = "Ex.: sites/Equipe/Documentos", MaxLength = 400, AccessibleName = "Caminho da biblioteca" };
+    private readonly Label _rotuloSubpastaDestino = Legenda("Subpasta de destino (opcional)");
+    private readonly TextBox _subpastaDestino = new()
+        { PlaceholderText = "Em branco para a raiz", MaxLength = 2048, AccessibleName = "Subpasta no destino" };
     private readonly Dictionary<string, CheckBox> _checks = new(StringComparer.Ordinal);
 
     private readonly CheckBox _identificarVazios = new()
@@ -200,9 +140,7 @@ public partial class Form1 : Form
         _ativarTamanho.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _exportarRelatorio.CheckedChanged += (_, _) => AtualizarHabilitacao();
         _ativarDuplicatas.CheckedChanged += (_, _) => AtualizarHabilitacao();
-        _atualizarHistorico.Click += async (_, _) => await AtualizarHistoricoAsync();
-        _consultarDetalhesHistorico.Click += (_, _) => AbrirDetalhesHistorico();
-        _gradeHistorico.CellDoubleClick += (_, _) => AbrirDetalhesHistorico();
+        Shown += async (_, _) => await AtualizarAnalisesAsync();
         _selecionar.Click += (_, _) => SelecionarPasta();
         _escolherQuarentena.Click += (_, _) =>
         {
@@ -223,6 +161,7 @@ public partial class Form1 : Form
         };
         FormClosing += (_, args) =>
         {
+            if (_inventario.Ocupado || _carregandoAnalises || _auditando) { args.Cancel = true; return; }
             if (_cancelamento is not null)
             {
                 _cancelamento.Cancel();
@@ -231,36 +170,6 @@ public partial class Form1 : Form
             }
         };
 
-        _gradeDuplicatas.DataBindingComplete += (_, _) =>
-        {
-            foreach (DataGridViewColumn coluna in _gradeDuplicatas.Columns)
-                coluna.Width = coluna.Name switch
-                {
-                    "Grupo" => 85,
-                    "TamanhoBytes" => 130,
-                    "Sha256" => 520,
-                    _ => 470
-                };
-            foreach (DataGridViewRow linha in _gradeDuplicatas.Rows)
-                foreach (DataGridViewCell celula in linha.Cells)
-                    celula.ToolTipText = Convert.ToString(celula.Value) ?? "";
-        };
-        _grade.DataBindingComplete += (_, _) =>
-        {
-            var larguras = new Dictionary<string, int>
-            {
-                ["Tipo"] = 75, ["Caminho"] = 300, ["Bytes"] = 100,
-                ["IndiciosGerais"] = 185, ["Compatibilidade"] = 220,
-                ["Justificativas"] = 380, ["FiltroPersonalizado"] = 160,
-                ["ModificadoUtc"] = 180
-            };
-            foreach (DataGridViewColumn coluna in _grade.Columns)
-                if (larguras.TryGetValue(coluna.Name, out var largura))
-                    coluna.Width = largura;
-            foreach (DataGridViewRow linha in _grade.Rows)
-                foreach (DataGridViewCell celula in linha.Cells)
-                    celula.ToolTipText = Convert.ToString(celula.Value) ?? "";
-        };
         AplicarRecomendacoesDoDestino();
         AtualizarHabilitacao();
         TemaVisual.Registrar(this);
@@ -289,7 +198,15 @@ public partial class Form1 : Form
     private void AtualizarHabilitacao()
     {
         var pronto = _cancelamento is null;
+        _criterioTemporal.Enabled = pronto && _ativarSinalTemporal.Checked;
+        _politicaPreservacao.Enabled = pronto;
+        _tentarAdministrador.Enabled = pronto && !Administrador();
+        _tentarAdministrador.Text = Administrador() ? "Executando como administrador" : "Tentar como administrador";
         _subtipo.Enabled = pronto && _sharePoint.Checked;
+        _rotuloBibliotecaDestino.Visible = _caminhoBiblioteca.Visible = _sharePoint.Checked;
+        _rotuloSubpastaDestino.Visible = _subpastaDestino.Visible = _azure.Checked || _sharePoint.Checked;
+        _caminhoBiblioteca.Enabled = pronto && _sharePoint.Checked;
+        _subpastaDestino.Enabled = pronto && (_azure.Checked || _sharePoint.Checked);
         _grupoAzure.Enabled = pronto && _azure.Checked;
         _grupoSharePoint.Enabled = pronto && _sharePoint.Checked;
         _identificarVazios.Enabled = pronto;
@@ -307,58 +224,7 @@ public partial class Form1 : Form
         _escolherRelatorios.Enabled = pronto;
         _exportarRelatorio.Enabled = pronto;
         _filtroRelatorio.Enabled = pronto && _exportarRelatorio.Checked;
-        _salvarHistorico.Enabled = pronto;
-        _atualizarHistorico.Enabled = pronto;
-        _consultarDetalhesHistorico.Enabled = pronto;
-    }
-
-    private void AbrirDetalhesHistorico()
-    {
-        // Identifica pelo ID, não pelo índice visual: o usuário pode ordenar
-        // a grade por qualquer coluna sem consultar a execução errada.
-        var id = Convert.ToString(_gradeHistorico.CurrentRow?.Cells["Id"].Value);
-        var execucao = _execucoesHistoricas.FirstOrDefault(x => x.Id == id);
-        if (execucao is null)
-        {
-            MessageBox.Show(this, "Selecione uma execução do histórico.",
-                "CLEAR — Histórico SQLite", MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            return;
-        }
-        using var janela = new FormDetalhesHistoricoM6(
-            execucao, SessaoHistoricoSqliteM6.CaminhoPadrao,
-            _pastaQuarentena.Text);
-        janela.ShowDialog(this);
-    }
-
-    private async Task AtualizarHistoricoAsync()
-    {
-        _atualizarHistorico.Enabled = false;
-        try
-        {
-            var registros = await SessaoHistoricoSqliteM6.ConsultarUltimasAsync(
-                SessaoHistoricoSqliteM6.CaminhoPadrao);
-            _execucoesHistoricas = registros;
-            _gradeHistorico.DataSource = registros.Select(x => new
-            {
-                x.InicioUtc, x.FimUtc, x.Estado, x.DiretorioRaiz,
-                x.QuantidadeArquivos, x.QuantidadeDiretorios, x.TotalBytes,
-                x.EntradasPersistidas, x.GruposDuplicatas, x.TotalOcorrencias,
-                x.Id
-            }).ToList();
-            _infoHistorico.Text =
-                $"{registros.Count} execução(ões). Selecione uma e clique Consultar detalhes. Banco: " +
-                SessaoHistoricoSqliteM6.CaminhoPadrao +
-                " | Consulta somente leitura; classificações antigas não são reutilizadas.";
-        }
-        catch (Exception ex)
-        {
-            _infoHistorico.Text = "Não foi possível consultar histórico: " + ex.Message;
-        }
-        finally
-        {
-            _atualizarHistorico.Enabled = _cancelamento is null;
-        }
+        AtualizarAcoesDaTela();
     }
 
     private static string PastaInicialDeSelecao =>
@@ -434,9 +300,7 @@ public partial class Form1 : Form
     {
         PerfilDestino? perfil = _azure.Checked ? PerfilDestino.AzureFilesSmb()
             : _sharePoint.Checked
-                ? PerfilDestino.SharePointEmpresarial(
-                    _subtipo.SelectedIndex == 1 ? SubtipoSharePoint.OneDriveForBusiness
-                                                : SubtipoSharePoint.SharePointOnline)
+                ? PerfilDestino.SharePointEmpresarial(SubtipoSharePoint.SharePointOnline)
                 : null;
 
         var habilitadas = perfil is null
@@ -444,7 +308,10 @@ public partial class Form1 : Form
             : CatalogoVerificacoes.Definicoes.Where(x => x.Ambiente == perfil.Ambiente &&
                 _checks[x.Codigo].Checked).Select(x => x.Codigo).ToArray();
 
-        return new ConfiguracaoCompatibilidade(perfil, habilitadas);
+        return new ConfiguracaoCompatibilidade(perfil, habilitadas,
+            _sharePoint.Checked && !string.IsNullOrWhiteSpace(_caminhoBiblioteca.Text)
+                ? _caminhoBiblioteca.Text : null,
+            perfil is not null ? _subpastaDestino.Text : null);
     }
 
     private FiltroTamanhoPersonalizado? CriarFiltroPersonalizado()
@@ -469,7 +336,9 @@ public partial class Form1 : Form
         var filtro = CriarFiltroPersonalizado();
         return string.Join("\n", new[]
         {
-            "M9-parte2-v1",
+            "M9-datas-preservacao-v2",
+            $"CriterioTemporal={CriterioSelecionado}",
+            $"PoliticaPreservacao={PoliticaSelecionada}",
             $"Vazios={_identificarVazios.Checked}",
             $"Temporarios={_identificarTemporarios.Checked}",
             $"Temporal={_ativarSinalTemporal.Checked}",
@@ -480,9 +349,12 @@ public partial class Form1 : Form
             $"Indexacao={(_ativarDuplicatas.Checked ? _limiteIndexacao.Value : 0)}",
             $"Relatorio={_exportarRelatorio.Checked}",
             $"FiltroRelatorio={(_exportarRelatorio.Checked ? _filtroRelatorio.SelectedIndex : -1)}",
-            $"Historico={_salvarHistorico.Checked}",
+            "Historico=True",
             $"Perfil={destino.Perfil?.Ambiente}",
             $"Subtipo={destino.Perfil?.Subtipo}",
+            $"CatalogoDestino={CatalogoVerificacoes.Versao}",
+            $"Biblioteca={destino.CaminhoBibliotecaDecodificado}",
+            $"SubpastaDestino={destino.SubpastaDestino}",
             $"Regras={string.Join(",", destino.CodigosHabilitados.OrderBy(x => x, StringComparer.Ordinal))}"
         });
     }
@@ -539,6 +411,7 @@ public partial class Form1 : Form
 
     private async Task IniciarAnaliseAsync()
     {
+        if (_cancelamento is not null || _inventario.Ocupado || _carregandoAnalises || _auditando) return;
         var pasta = _caminho.Text.Trim();
         if (!Directory.Exists(pasta))
         {
@@ -551,6 +424,17 @@ public partial class Form1 : Form
         FiltroTamanhoPersonalizado? filtro;
         ClassificadorArquivos classificador;
         var usarSinalTemporal = _ativarSinalTemporal.Checked;
+        var criterioSelecionado = CriterioSelecionado;
+        var politicaSelecionada = PoliticaSelecionada;
+        if (politicaSelecionada == PoliticaSemPreservacao.LerComAviso && MessageBox.Show(this,
+            "Você autoriza a leitura do conteúdo quando o Windows não aceitar a preservação do último acesso? " +
+            "Nesses casos a data de acesso poderá mudar. Cada tentativa será registrada. " +
+            "A autorização vale somente para esta análise.", "Leitura sem garantia de preservação",
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            return;
+        SessaoPreservacaoAcesso? preservacao = null;
+        var caminhoAuditoria = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CLEAR", "Preservacao", DateTimeOffset.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N") + ".json");
         var identificarVazios = _identificarVazios.Checked;
         var identificarTemporarios = _identificarTemporarios.Checked;
         var usarDuplicatas = _ativarDuplicatas.Checked;
@@ -558,9 +442,9 @@ public partial class Form1 : Form
         var maximoArquivosIndexados = (int)_limiteIndexacao.Value;
         var salvarCheckpoint = _salvarCheckpoint.Checked;
         var exportarRelatorio = _exportarRelatorio.Checked;
-        var salvarHistorico = _salvarHistorico.Checked;
         var diasSelecionados = (int)_dias.Value;
-        var referenciaTemporalUtc = DateTimeOffset.UtcNow;
+        var referenciaTemporalLocal = DateTimeOffset.Now;
+        var referenciaTemporalUtc = referenciaTemporalLocal.ToUniversalTime();
         ExportadorRelatoriosM5? exportador = null;
         SessaoHistoricoSqliteM6? historico = null;
         CheckpointAnaliseM9? checkpoint = null;
@@ -573,9 +457,11 @@ public partial class Form1 : Form
                 identificarVazios,
                 identificarTemporarios,
                 usarSinalTemporal ? diasSelecionados : null,
-                referenciaTemporalUtc);
-            ValidarDestinoSaida(pasta, _pastaQuarentena.Text,
-                exigirMesmoVolume: true);
+                referenciaTemporalLocal, criterioSelecionado);
+            ValidarDestinoSaida(pasta, caminhoAuditoria, exigirMesmoVolume: false);
+            Directory.CreateDirectory(Path.GetDirectoryName(caminhoAuditoria)!);
+            // A análise é somente leitura. O destino de quarentena é validado
+            // pelo serviço M7 somente ao preparar uma movimentação confirmada.
             if (exportarRelatorio)
             {
                 ValidarDestinoSaida(pasta, _pastaRelatorios.Text,
@@ -607,17 +493,12 @@ public partial class Form1 : Form
         _identificarVazios.Enabled = false;
         _identificarTemporarios.Enabled = false;
         AtualizarHabilitacao();
-        _grade.DataSource = null;
-        _gradeDuplicatas.DataSource = null;
-        _resumoDuplicatas.Text = usarDuplicatas
-            ? "Aguardando o inventário para iniciar a busca de duplicatas..."
-            : "Busca de duplicatas desativada. Marque o filtro geral para habilitar.";
-        _ocorrencias.Items.Clear();
-        _metricasM9.Text = "Análise em andamento. Tempos serão publicados apenas após conclusão.";
+        var inicioMedicaoUtc = DateTimeOffset.UtcNow;
+        var configuracaoMedicao = AssinaturaConfiguracaoM9();
         var cronometroTotal = Stopwatch.StartNew();
         TimeSpan duracaoInventario = TimeSpan.Zero;
         TimeSpan duracaoDuplicatas = TimeSpan.Zero;
-        _resumo.Text = "Inventariando metadados e aplicando verificações habilitadas...";
+        _estado.Text = "Inventariando metadados e aplicando verificações habilitadas…";
 
         long totalArquivosPrevistos = 0;
         var relogioInventario = Stopwatch.StartNew();
@@ -633,38 +514,35 @@ public partial class Form1 : Form
                 $" | {(totalArquivosPrevistos > 0
                     ? EstimativaRestante.Exibir(previsao) : "ETA: indisponível")}";
         });
-        if (salvarCheckpoint)
-        {
-            try
-            {
-                checkpoint = CheckpointAnaliseM9.Iniciar(pasta, AssinaturaConfiguracaoM9());
-            }
-            catch (Exception ex)
-            {
-                _estado.Text = "Checkpoint M9 indisponível: " + ex.Message;
-                _metricasM9.Text = "Análise não iniciada; marcador de progresso falhou.";
-                // Sem prosseguir silenciosamente sem a opção solicitada.
-                _cancelamento.Dispose();
-                _cancelamento = null;
-                _selecionar.Enabled = true;
-                _iniciar.Enabled = true;
-                _cancelar.Enabled = false;
-                _semDestino.Enabled = true;
-                _azure.Enabled = true;
-                _sharePoint.Enabled = true;
-                _ativarSinalTemporal.Enabled = true;
-                _ativarTamanho.Enabled = true;
-                _identificarVazios.Enabled = true;
-                _identificarTemporarios.Enabled = true;
-                AtualizarHabilitacao();
-                if (exportador is not null) await exportador.DisposeAsync();
-                return;
-            }
-        }
-        var progresso = new ProgressoComCheckpoint(progressoUi, checkpoint);
-
         try
         {
+            var filtrosAtivos = new List<string>();
+            if (identificarVazios) filtrosAtivos.Add("ArquivoVazio");
+            if (identificarTemporarios) filtrosAtivos.Add("CopiaBackupOuTemporario");
+            if (usarSinalTemporal) filtrosAtivos.Add("SinalTemporal");
+            if (filtro is not null) filtrosAtivos.Add("TamanhoPersonalizado");
+            if (usarDuplicatas) filtrosAtivos.Add("DuplicatasSHA256");
+            var parametros = new ParametrosHistoricoM6(
+                filtrosAtivos,
+                configuracao.Perfil?.Ambiente.ToString(),
+                configuracao.Perfil?.Subtipo?.ToString(),
+                configuracao.CodigosHabilitados,
+                filtro?.LimiteBytes,
+                usarSinalTemporal ? diasSelecionados : null,
+                usarSinalTemporal ? referenciaTemporalUtc : null,
+                usarDuplicatas,
+                usarSinalTemporal ? criterioSelecionado.ToString() + "Utc" : null,
+                politicaSelecionada.ToString(),
+                CatalogoVerificacoes.Versao, configuracao.CaminhoBibliotecaDecodificado,
+                configuracao.SubpastaDestino, usarDuplicatas ? maximoHashesSimultaneos : null,
+                usarDuplicatas ? maximoArquivosIndexados : null, exportarRelatorio, salvarCheckpoint);
+
+            historico = await Task.Run(() => SessaoHistoricoSqliteM6.IniciarAsync(
+                pasta, BancoHistorico, parametros, CancellationToken.None));
+            if (salvarCheckpoint) checkpoint = CheckpointAnaliseM9.Iniciar(pasta, configuracaoMedicao);
+            var progresso = new ProgressoComCheckpoint(progressoUi, checkpoint);
+            preservacao = new SessaoPreservacaoAcesso(politicaSelecionada, Path.ChangeExtension(caminhoAuditoria, ".jsonl"),
+                usarSinalTemporal ? criterioSelecionado.ToString() : "Desativado");
             _estado.Text = "Pré-contando arquivos para estimar o inventário (somente leitura)...";
             try
             {
@@ -693,32 +571,8 @@ public partial class Form1 : Form
                 totalArquivosPrevistos = 0;
             }
             relogioInventario.Restart();
-            if (salvarHistorico)
-            {
-                var filtrosAtivos = new List<string>();
-                if (identificarVazios) filtrosAtivos.Add("ArquivoVazio");
-                if (identificarTemporarios) filtrosAtivos.Add("CopiaBackupOuTemporario");
-                if (usarSinalTemporal) filtrosAtivos.Add("SinalTemporal");
-                if (filtro is not null) filtrosAtivos.Add("TamanhoPersonalizado");
-                if (usarDuplicatas) filtrosAtivos.Add("DuplicatasSHA256");
-                var parametros = new ParametrosHistoricoM6(
-                    filtrosAtivos,
-                    configuracao.Perfil?.Ambiente.ToString(),
-                    configuracao.Perfil?.Subtipo?.ToString(),
-                    configuracao.CodigosHabilitados,
-                    filtro?.LimiteBytes,
-                    usarSinalTemporal ? diasSelecionados : null,
-                    usarSinalTemporal ? referenciaTemporalUtc : null,
-                    usarDuplicatas,
-                    usarSinalTemporal ? "UltimoAcessoUtc" : null);
-
-                historico = await SessaoHistoricoSqliteM6.IniciarAsync(
-                    pasta, SessaoHistoricoSqliteM6.CaminhoPadrao, parametros, token);
-            }
-
-            IObservadorInventario? observador = exportador is not null && historico is not null
-                ? new ObservadorInventarioComposto(exportador, historico)
-                : (IObservadorInventario?)exportador ?? historico;
+            IObservadorInventario observador = exportador is null
+                ? historico : new ObservadorInventarioComposto(exportador, historico);
 
             var casoDeUso = new InventariarDiretorio(
                 new FonteInventarioSistemaArquivos(), limiteAmostra: 1000,
@@ -730,23 +584,9 @@ public partial class Form1 : Form
                 () => casoDeUso.ExecutarAsync(pasta, progresso, token), token);
             duracaoInventario = relogioInventario.Elapsed;
 
-            foreach (var item in resultado.Ocorrencias)
-                _ocorrencias.Items.Add($"{item.Tipo}: {item.Caminho} — {item.Descricao}");
-
-            var parcial = resultado.Incompleto ? " | inventário parcial" : "";
-            var exibicao = resultado.QuantidadeArquivos + resultado.QuantidadeDiretorios >
-                resultado.AmostraAvaliacoes.Count ? " | amostra limitada a 1.000 entradas" : "";
-
-            _resumo.Text =
-                $"{resultado.QuantidadeArquivos:N0} arquivo(s) | {resultado.QuantidadeDiretorios:N0} pasta(s) | " +
-                $"{resultado.TotalBytes:N0} bytes | {resultado.ArquivosComIndicios:N0} arquivo(s) com indícios gerais" +
-                $" | {resultado.ItensComIncompatibilidade:N0} item(ns) com incompatibilidade de destino" +
-                $" | {resultado.ArquivosAcimaLimitePersonalizado:N0} acima do limite pessoal" +
-                $" | {resultado.TotalOcorrencias:N0} ocorrência(s){parcial}{exibicao}";
-
             var textoPerfil = configuracao.Perfil is null ? "Sem perfil de destino"
                 : configuracao.Perfil.Ambiente == AmbienteDestino.AzureFilesClassicoSmb
-                    ? "Azure Files SMB" : configuracao.Perfil.Subtipo?.ToString() ?? "SPO";
+                    ? "Azure Files SMB" : "SharePoint";
 
             var estado = !configuracao.HaVerificacoesHabilitadas
                 ? "Nenhuma verificação de destino habilitada."
@@ -756,8 +596,8 @@ public partial class Form1 : Form
                       $"{resultado.AvaliacoesNaoAvaliadas:N0} não avaliadas.";
 
             _estado.Text = $"{textoPerfil} | {estado} " +
-                (usarSinalTemporal ? $"Sinal temporal por ÚLTIMO ACESSO (metadado Windows): {diasSelecionados} dias. " : "") +
-                "Nenhum arquivo alterado.";
+                (usarSinalTemporal ? $"Sinal temporal por {criterioSelecionado}: {diasSelecionados} dias. " : "") +
+                "Conteúdo dos arquivos inalterado.";
             _dicas.SetToolTip(_estado, _estado.Text);
 
             ResultadoDuplicatas? resultadoDuplicatas = null;
@@ -765,14 +605,15 @@ public partial class Form1 : Form
             {
                 // A detecção usa outra varredura para não reter todos os caminhos
                 // do inventário M3, cuja tabela segue limitada a 1.000 entradas.
-                _resumoDuplicatas.Text = "Calculando grupos por tamanho e SHA-256; leitura somente...";
+                _estado.Text = "Calculando grupos por tamanho e SHA-256; leitura somente...";
                 var relogioSha = Stopwatch.StartNew();
                 var progressoDuplicatas = new Progress<ProgressoDuplicatas>(p =>
                 {
-                    var eta = EstimativaRestante.Calcular(p.CandidatosComHash,
+                    var eta = EstimativaRestante.Calcular(p.CandidatosProcessados,
                         p.ArquivosCandidatos, 0, 0, relogioSha.Elapsed);
-                    _resumoDuplicatas.Text =
-                        $"SHA-256: {p.CandidatosComHash:N0} de {p.ArquivosCandidatos:N0} " +
+                    _estado.Text =
+                        $"SHA-256: {p.CandidatosProcessados:N0} de {p.ArquivosCandidatos:N0} processados " +
+                        $"({p.CandidatosComHash:N0} hashes; {p.Falhas:N0} falhas) | " +
                         $"candidatos | {EstimativaRestante.Exibir(eta)} " +
                         "(somente fase de hashes; não inclui confirmação byte a byte).";
                 });
@@ -786,77 +627,11 @@ public partial class Form1 : Form
                 duracaoDuplicatas = relogioDuplicatas.Elapsed;
                 var duplicatas = resultadoDuplicatas;
 
-                // Apenas as primeiras 200 linhas são renderizadas. Os totais
-                // incluem todos os grupos e arquivos validados.
-                _gradeDuplicatas.DataSource = duplicatas.Grupos
-                    .SelectMany((grupo, indice) => grupo.Arquivos.Select(arquivo => new
-                    {
-                        Grupo = indice + 1,
-                        TamanhoBytes = grupo.TamanhoBytes,
-                        Arquivo = arquivo.CaminhoCompleto,
-                        Sha256 = grupo.Sha256Hex
-                    }))
-                    .Take(200).ToList();
-
-                _resumoDuplicatas.Text =
-                    $"{duplicatas.Grupos.Count:N0} grupo(s) exato(s) | " +
-                    $"{duplicatas.ArquivosEmGrupos:N0} arquivo(s) em grupos | " +
-                    $"{duplicatas.CandidatosPorTamanho:N0} candidato(s) por tamanho | " +
-                    $"{duplicatas.ArquivosComHash:N0} hashes | " +
-                    $"{duplicatas.BytesPotencialmenteRedundantes:N0} bytes potencialmente redundantes " +
-                    "(estimativa; sem descarte)" +
-                    (duplicatas.Incompleto
-                        ? $" | ATENÇÃO: {duplicatas.TotalOcorrencias:N0} ocorrência(s), resultado parcial"
-                        : "") +
-                    (duplicatas.ArquivosEmGrupos > 200 ? " | exibindo apenas 200 linhas" : "");
-
-                foreach (var ocorrencia in duplicatas.Ocorrencias)
-                    _ocorrencias.Items.Add(
-                        $"M4 — {ocorrencia.Tipo}: {ocorrencia.Caminho} — {ocorrencia.Descricao}");
                 _estado.Text = duplicatas.Incompleto
                     ? "M4 parcial: houve falhas; nenhuma ação foi executada. " +
                       "Os grupos listados passaram por comparação byte a byte."
-                    : "M4 concluído: SHA-256 e confirmação byte a byte. Nenhum arquivo alterado.";
+                    : "M4 concluído: SHA-256 e confirmação byte a byte. Conteúdo dos arquivos inalterado.";
             }
-
-            var caminhosDuplicados = resultadoDuplicatas?.Grupos.SelectMany(g => g.Arquivos)
-                .Select(a => a.CaminhoCompleto).ToHashSet(StringComparer.OrdinalIgnoreCase)
-                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _grade.DataSource = resultado.AmostraAvaliacoes.Select(item =>
-            {
-                var arquivo = item.Entrada.Arquivo;
-                var gerais = arquivo is null ? "" :
-                    string.Join(", ", classificador.Classificar(arquivo).Categorias);
-                var relevantes = item.Verificacoes.Where(x => x.Estado is
-                    EstadoVerificacao.IncompatibilidadeDocumentada or
-                    EstadoVerificacao.Alerta or EstadoVerificacao.NaoAvaliado).ToArray();
-
-                return new
-                {
-                    Tipo = item.Entrada.Tipo == TipoEntradaInventario.Arquivo ? "Arquivo" : "Pasta",
-                    Caminho = item.Entrada.CaminhoCompleto,
-                    Bytes = item.Entrada.TamanhoBytes,
-                    IndiciosGerais = gerais.Length == 0 ? "Nenhum indício geral" : gerais,
-                    Compatibilidade = string.Join(" | ", relevantes.Select(x =>
-                        x.CodigoRegra + ": " + x.Estado)),
-                    Justificativas = string.Join(" | ", relevantes.Select(x =>
-                        x.CodigoRegra + ": " + x.Justificativa)),
-                    FiltroPersonalizado = item.AcimaDoLimitePersonalizado
-                        ? "Acima do limite pessoal" : "",
-                    DuplicataExata = caminhosDuplicados.Contains(item.Entrada.CaminhoCompleto),
-                    SituacaoPreAnalise = arquivo is null && !relevantes.Any(x => x.Estado is
-                        EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
-                        ? "Pasta (não aplicável)" :
-                        gerais.Length == 0 && !item.AcimaDoLimitePersonalizado &&
-                        !caminhosDuplicados.Contains(item.Entrada.CaminhoCompleto) &&
-                        !relevantes.Any(x => x.Estado is
-                            EstadoVerificacao.IncompatibilidadeDocumentada or EstadoVerificacao.Alerta)
-                            ? "Sem alertas detectados (não significa aprovado)"
-                            : "Com indícios ou alertas",
-                    UltimoAcessoUtc = arquivo?.UltimoAcessoUtc,
-                    ModificadoUtc = arquivo?.UltimaModificacaoUtc
-                };
-            }).ToList();
 
             if (exportador is not null)
             {
@@ -870,89 +645,102 @@ public partial class Form1 : Form
 
                 var arquivos = await exportador.ConcluirAsync(resultado, resultadoDuplicatas,
                     filtrosGerais, usarSinalTemporal ? diasSelecionados : null,
-                    usarSinalTemporal ? referenciaTemporalUtc : null, token);
+                    usarSinalTemporal ? referenciaTemporalUtc : null, token, criterioSelecionado, preservacao.Resumo);
 
                 _estado.Text = $"M5 concluído: {arquivos.LinhasExportadas:N0} linha(s) CSV " +
-                    "(amostra visual não limita o relatório). Arquivos originais inalterados.";
+                    "(amostra visual não limita o relatório). Conteúdo dos arquivos originais inalterado.";
             }
 
-            if (historico is not null)
-            {
-                _estado.Text = "Confirmando transação SQLite da análise...";
-                await historico.ConcluirAsync(resultado, resultadoDuplicatas, token);
-                _estado.Text = $"Histórico M6 salvo: {historico.EntradasPersistidas:N0} entrada(s). " +
-                    "Sem reutilização de classificações. Nenhum arquivo original alterado.";
-                await AtualizarHistoricoAsync();
-            }
-
+            _estado.Text = "Salvando a análise no histórico…";
+            historico.PreservacaoAcesso = preservacao.Resumo;
+            await historico.ConcluirAsync(resultado, resultadoDuplicatas, token);
             checkpoint?.MarcarConcluida();
             cronometroTotal.Stop();
+            // Salvar medições não deve converter uma análise concluída em falha.
+            string estadoMetricas;
+            try
+            {
+                var categoriasMedidas = new List<CategoriaAnalise>();
+                if (identificarVazios) categoriasMedidas.Add(CategoriaAnalise.ArquivoVazio);
+                if (identificarTemporarios) categoriasMedidas.Add(CategoriaAnalise.CopiaBackupOuTemporario);
+                if (usarSinalTemporal) categoriasMedidas.Add(CategoriaAnalise.SinalTemporal);
+                var medicao = MetricasAnalise.Criar(pasta, inicioMedicaoUtc, resultado,
+                    resultadoDuplicatas, duracaoInventario, duracaoDuplicatas,
+                    cronometroTotal.Elapsed, maximoHashesSimultaneos, configuracaoMedicao, categoriasMedidas) with
+                    { Id = historico.IdExecucao, CriterioTemporal = usarSinalTemporal ? criterioSelecionado.ToString() : "Desativado",
+                      PreservacaoAcesso = preservacao.Resumo };
+                var bancoMetricas = RepositorioMetricasAnalise.CaminhoPadrao;
+                await RepositorioMetricasAnalise.SalvarAsync(bancoMetricas, medicao);
+                estadoMetricas = "Métricas persistidas em: " + bancoMetricas;
+                if (exportarRelatorio)
+                {
+                    var csvMetricas = Path.Combine(_pastaRelatorios.Text,
+                        "CLEAR_Metricas_" + medicao.Id + ".csv");
+                    await RepositorioMetricasAnalise.ExportarCsvAsync(csvMetricas, new[] { medicao });
+                    var consolidado = Path.Combine(_pastaRelatorios.Text,
+                        "CLEAR_Metricas_Historico_" + medicao.Id + ".csv");
+                    var medicoesSalvas = await RepositorioMetricasAnalise.ConsultarAsync(bancoMetricas);
+                    await RepositorioMetricasAnalise.ExportarCsvAsync(consolidado, medicoesSalvas);
+                    estadoMetricas += " | Tabela Excel: " + csvMetricas + " | Consolidado: " + consolidado;
+                }
+            }
+            catch (Exception ex)
+            {
+                estadoMetricas = "A análise concluiu, mas houve falha ao salvar/exportar métricas: " + ex.Message;
+            }
             _estado.Text = (resultado.Incompleto || resultadoDuplicatas?.Incompleto == true
-                ? "Concluída com ocorrências • Consulte a aba Ocorrências."
-                : "Análise concluída • Arquivos preservados.") +
+                ? "Concluída com ocorrências · Inventário / Ocorrências." : "Análise concluída e salva no histórico.") +
                 (exportador is not null ? " Relatórios em: " + _pastaRelatorios.Text : "") +
-                (historico is not null ? " • Histórico salvo." : "");
-            _dicas.SetToolTip(_estado, _estado.Text);
-            double segundos = duracaoInventario.TotalSeconds;
-            double taxaArquivos = segundos > 0 ? resultado.QuantidadeArquivos / segundos : 0;
-            double taxaMiB = segundos > 0
-                ? resultado.TotalBytes / 1048576.0 / segundos : 0;
-            _metricasM9.Text =
-                "MEDIÇÕES OBSERVADAS (não são benchmark validado)" + Environment.NewLine +
-                "Arquivos: " + resultado.QuantidadeArquivos.ToString("N0") +
-                " | Pastas: " + resultado.QuantidadeDiretorios.ToString("N0") +
-                " | Volume associado aos arquivos inventariados: " +
-                resultado.TotalBytes.ToString("N0") + Environment.NewLine +
-                "Inventário: " + duracaoInventario.TotalMilliseconds.ToString("F1") + " ms" +
-                " | Taxa: " + taxaArquivos.ToString("F1") + " arquivos/s" +
-                " | Volume inventariado: " + taxaMiB.ToString("F2") + " MiB/s" +
-                Environment.NewLine +
-                "Duplicatas (inclui segunda enumeração e SHA-256): " +
-                duracaoDuplicatas.TotalMilliseconds.ToString("F1") + " ms" +
-                " | Leitores SHA-256 simultâneos: " +
-                (usarDuplicatas ? maximoHashesSimultaneos.ToString() : "desativado") +
-                Environment.NewLine +
-                "Total da análise (inclui relatórios/histórico quando ativos): " +
-                cronometroTotal.Elapsed.TotalMilliseconds.ToString("F1") + " ms" +
-                Environment.NewLine +
-                "Inventário parcial: " + resultado.Incompleto +
-                " | Duplicatas parciais: " + (resultadoDuplicatas?.Incompleto ?? false) +
-                Environment.NewLine +
-                "Medidas dependem de cache do SO, hardware, antivírus e outras cargas." +
-                Environment.NewLine +
-                "Apenas leitura e medição, sem alterações nos arquivos do acervo.";
+                (estadoMetricas.StartsWith("A análise", StringComparison.Ordinal) ? " " + estadoMetricas : "");
+            _dicas.SetToolTip(_estado, _estado.Text + Environment.NewLine + estadoMetricas);
+            DefinirConfiguracoesExpandidas(false);
+            _abasResultados.SelectedIndex = 0;
         }
         catch (OperationCanceledException)
         {
+            _estado.Text = "Análise cancelada pelo usuário.";
             try { checkpoint?.MarcarCancelada(); }
-            catch (Exception ex) { _estado.Text = "Falha ao registrar cancelamento: " + ex.Message; }
-            _resumo.Text = "Inventário cancelado; resultados parciais descartados.";
-            _estado.Text = "Cancelado pelo usuário.";
-            _metricasM9.Text = "Análise cancelada; métricas incompletas não publicadas.";
+            catch (Exception erro) { _estado.Text += " Falha no checkpoint: " + erro.Message; }
+            await RegistrarInterrupcaoAsync(historico, true, "Cancelada pelo usuário.");
         }
         catch (Exception ex)
         {
-            try { checkpoint?.MarcarFalha(); }
-            catch (Exception erro) { _metricasM9.Text = "Falha ao salvar checkpoint: " + erro.Message; }
-            _resumo.Text = "Inventário não concluído.";
             _estado.Text = "Falha: " + ex.Message;
-            _metricasM9.Text = "Análise interrompida por falha; métricas inconclusivas.";
+            try { checkpoint?.MarcarFalha(); }
+            catch (Exception erro) { _estado.Text += " Falha no checkpoint: " + erro.Message; }
+            await RegistrarInterrupcaoAsync(historico, false, ex.Message);
             MessageBox.Show(this, ex.Message, "Falha no inventário",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
         {
+            if (preservacao is not null)
+            {
+                var resumoPreservacao = preservacao.Resumo;
+                if (resumoPreservacao.LeiturasIgnoradas > 0 || resumoPreservacao.LeiturasSemGarantia > 0)
+                    _estado.Text += " Houve conteúdo ignorado ou lido sem garantia. Consulte Inventário / Ocorrências.";
+                _dicas.SetToolTip(_estado, _estado.Text);
+                try { await preservacao.SalvarAsync(caminhoAuditoria); }
+                catch (Exception erro)
+                {
+                    _estado.Text += " FALHA ao salvar auditoria de preservação: " + erro.Message;
+                }
+                finally { preservacao.Dispose(); }
+            }
             try { checkpoint?.Dispose(); }
             catch (Exception ex)
             {
                 _estado.Text = "Atenção: falha ao fechar checkpoint: " + ex.Message;
             }
-            _cancelamento.Dispose();
-            _cancelamento = null;
             if (exportador is not null)
                 await exportador.DisposeAsync();
             if (historico is not null)
+            {
                 await historico.DisposeAsync();
+                await AtualizarAnalisesAsync(historico.IdExecucao);
+            }
+            _cancelamento.Dispose();
+            _cancelamento = null;
             _selecionar.Enabled = true;
             _iniciar.Enabled = true;
             _cancelar.Enabled = false;
@@ -965,5 +753,12 @@ public partial class Form1 : Form
             _identificarTemporarios.Enabled = true;
             AtualizarHabilitacao();
         }
+    }
+
+    private async Task RegistrarInterrupcaoAsync(SessaoHistoricoSqliteM6? historico, bool cancelada, string motivo)
+    {
+        if (historico is null) return;
+        try { await historico.RegistrarInterrupcaoAsync(cancelada, motivo); }
+        catch (Exception erro) { _estado.Text += " Não foi possível salvar a tentativa: " + erro.Message; }
     }
 }

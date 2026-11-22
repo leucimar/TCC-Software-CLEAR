@@ -41,7 +41,7 @@ public static class LimpadorPastasVaziasM11
             if (v is not (1 or ServicoQuarentenaM7.VersaoEsquema))
                 throw new InvalidDataException("Auditoria incompatível.");
             await using var cmd = db.CreateCommand();
-            cmd.CommandText = "SELECT destino FROM movimentacoes";
+            cmd.CommandText = "SELECT destino FROM movimentacoes WHERE destino <> ''";
             await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
                 destinos.Add(reader.GetString(0));

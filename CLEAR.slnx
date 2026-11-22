@@ -7,8 +7,10 @@
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Clear.Benchmarks.M9/Clear.Benchmarks.M9.csproj" />
+    <Project Path="benchmarks/Clear.ValidacaoControlada/Clear.ValidacaoControlada.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Clear.Desktop.Tests/Clear.Desktop.Tests.csproj" />
     <Project Path="tests/Clear.Application.Tests/Clear.Application.Tests.csproj" />
     <Project Path="tests/Clear.Domain.Tests/Clear.Domain.Tests.csproj" />
     <Project Path="tests/Clear.Infrastructure.Tests/Clear.Infrastructure.Tests.csproj" />

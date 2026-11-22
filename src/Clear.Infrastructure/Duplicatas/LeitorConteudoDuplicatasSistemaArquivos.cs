@@ -75,15 +75,8 @@ public sealed class LeitorConteudoDuplicatasSistemaArquivos : ILeitorConteudoDup
     }
 
     private static FileStream AbrirSomenteLeitura(ArquivoInventariado arquivo) =>
-        new(arquivo.CaminhoCompleto, new FileStreamOptions
-        {
-            Mode = FileMode.Open,
-            Access = FileAccess.Read,
-            // Em Windows, evita escritores concorrentes durante a leitura.
-            Share = FileShare.Read,
-            BufferSize = BufferBytes,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
+        Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(arquivo.CaminhoCompleto,
+            FileShare.Read, BufferBytes);
 
     private static void VerificarAntesDaLeitura(ArquivoInventariado arquivo)
     {

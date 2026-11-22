@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using Clear.Infrastructure.Historico;
 using Microsoft.Data.Sqlite;
@@ -18,14 +18,15 @@ public sealed record PlanoQuarentenaM7(
 public sealed record RegistroQuarentenaM7(
     string IdOperacao, string Estado, string CaminhoOriginal,
     string CaminhoDestino, long TamanhoBytes, string Sha256Hex,
-    string IdExecucao, string? Mensagem);
+    string IdExecucao, string? Mensagem, string? CriadoUtc = null,
+    string? RaizAnalisada = null, string Estrutura = "Legado");
 
 /// <summary>
 /// Movimentação individual para quarentena com aprovação humana explícita,
 /// pré-verificação de metadados/SHA-256 e auditoria persistente. Não exclui.
 /// Restauração e reconciliação de operações pendentes pertencem ao M8.
 /// </summary>
-public static class ServicoQuarentenaM7
+public static partial class ServicoQuarentenaM7
 {
     public const int VersaoEsquema = 2;
 
@@ -194,7 +195,12 @@ public static class ServicoQuarentenaM7
         // terminada e auditoria não atualizada por escolha do usuário.
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(plano.CaminhoDestino)!);
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("A quarentena com preservação de segurança requer Windows.");
+            var permissoes = PreservacaoPermissoesQuarentena.Preparar(plano);
+            var auditoriaPermissoes = "SegurancaNTFS-v1; DACL/proprietario/grupo; SHA256=" + permissoes.ImpressaoArquivo;
+            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "Pendente", auditoriaPermissoes)
+                .ConfigureAwait(false);
             VerificarCaminhoSeguro(plano.CaminhoOriginal, arquivo: true);
             VerificarCaminhoSeguro(Path.GetDirectoryName(plano.CaminhoDestino)!, arquivo: false);
             if (File.Exists(plano.CaminhoDestino))
@@ -207,8 +213,10 @@ public static class ServicoQuarentenaM7
                 throw new IOException("Arquivo alterado antes da movimentação.");
 
             // Mesmo volume e overwrite=false: não sobrescreve arquivos.
+            permissoes.ValidarAntesDaMovimentacao();
             File.Move(plano.CaminhoOriginal, plano.CaminhoDestino, overwrite: false);
-            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "EmQuarentena", null)
+            permissoes.ValidarDepoisDaMovimentacao();
+            await AtualizarEstadoAsync(conexao, plano.IdOperacao, "EmQuarentena", auditoriaPermissoes)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -227,7 +235,7 @@ public static class ServicoQuarentenaM7
 
     public static async Task<IReadOnlyList<RegistroQuarentenaM7>> ConsultarAsync(
         string bancoAuditoria, string? idExecucao = null,
-        CancellationToken cancelamento = default, int pagina = 0)
+        CancellationToken cancelamento = default, int pagina = 0, string? estado = null)
     {
         if (pagina < 0) throw new ArgumentOutOfRangeException(nameof(pagina));
         if (!File.Exists(bancoAuditoria))
@@ -241,12 +249,14 @@ public static class ServicoQuarentenaM7
         await ValidarVersaoAsync(conexao, cancelamento).ConfigureAwait(false);
         await using var comando = conexao.CreateCommand();
         comando.CommandText = """
-            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem
+            SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem, criado_utc
             FROM movimentacoes
             WHERE ($execucao IS NULL OR execucao_id = $execucao)
+              AND ($estado IS NULL OR estado = $estado)
             ORDER BY criado_utc DESC, id LIMIT 200 OFFSET $offset;
             """;
         comando.Parameters.AddWithValue("$execucao", (object?)idExecucao ?? DBNull.Value);
+        comando.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
         comando.Parameters.AddWithValue("$offset", checked((long)pagina * 200));
         var itens = new List<RegistroQuarentenaM7>();
         await using var leitor = await comando.ExecuteReaderAsync(cancelamento).ConfigureAwait(false);
@@ -254,12 +264,13 @@ public static class ServicoQuarentenaM7
             itens.Add(new RegistroQuarentenaM7(
                 leitor.GetString(0), leitor.GetString(1), leitor.GetString(2),
                 leitor.GetString(3), leitor.GetInt64(4), leitor.GetString(5),
-                leitor.GetString(6), leitor.IsDBNull(7) ? null : leitor.GetString(7)));
+                leitor.GetString(6), leitor.IsDBNull(7) ? null : leitor.GetString(7),
+                leitor.GetString(8)));
         return itens.AsReadOnly();
     }
 
     public static async Task<long> ContarAuditoriaAsync(string bancoAuditoria,
-        string idExecucao, CancellationToken ct = default)
+        string idExecucao, CancellationToken ct = default, string? estado = null)
     {
         if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
         if (!File.Exists(bancoAuditoria)) return 0;
@@ -269,15 +280,19 @@ public static class ServicoQuarentenaM7
         await conexao.OpenAsync(ct).ConfigureAwait(false);
         await ValidarVersaoAsync(conexao, ct).ConfigureAwait(false);
         await using var comando = conexao.CreateCommand();
-        comando.CommandText = "SELECT COUNT(*) FROM movimentacoes WHERE execucao_id = $exec";
+        comando.CommandText = """
+            SELECT COUNT(*) FROM movimentacoes
+            WHERE execucao_id = $exec AND ($estado IS NULL OR estado = $estado);
+            """;
         comando.Parameters.AddWithValue("$exec", idExecucao);
+        comando.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
         return Convert.ToInt64(await comando.ExecuteScalarAsync(ct).ConfigureAwait(false),
             CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Exporta toda a auditoria da execução em fluxo, sem o limite da página visual.</summary>
+    /// <summary>Exporta a auditoria da execução em fluxo, com filtro de estado opcional.</summary>
     public static async Task<long> ExportarAuditoriaCsvAsync(string bancoAuditoria,
-        string idExecucao, string destino, CancellationToken ct = default)
+        string idExecucao, string destino, CancellationToken ct = default, string? estado = null)
     {
         if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
         ct.ThrowIfCancellationRequested();
@@ -295,9 +310,11 @@ public static class ServicoQuarentenaM7
             cmd.CommandText = """
                 SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem,
                        criado_utc FROM movimentacoes WHERE execucao_id = $exec
+                         AND ($estado IS NULL OR estado = $estado)
                 ORDER BY criado_utc, id;
                 """;
             cmd.Parameters.AddWithValue("$exec", idExecucao);
+            cmd.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
             long total = 0;
             await using (var leitor = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
             await using (var escritor = new StreamWriter(new FileStream(temporario,
@@ -329,12 +346,8 @@ public static class ServicoQuarentenaM7
         // Permitir renomeação no mesmo volume enquanto handle está aberto,
         // mas bloquear escrita durante SHA. O movimento não é prova de cópia
         // para outra unidade e não substitui avaliação de permissões/hardlinks.
-        await using var fluxo = new FileStream(caminho, new FileStreamOptions
-        {
-            Mode = FileMode.Open, Access = FileAccess.Read,
-            Share = FileShare.Read | FileShare.Delete,
-            BufferSize = 65536, Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
+        await using var fluxo = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(
+            caminho, FileShare.Read | FileShare.Delete);
         if (fluxo.Length != esperado)
             throw new IOException("O tamanho do arquivo mudou desde a análise.");
         var bytes = await SHA256.HashDataAsync(fluxo, cancelamento).ConfigureAwait(false);
@@ -352,7 +365,7 @@ public static class ServicoQuarentenaM7
             throw new IOException("Arquivo modificado desde a análise; reanalise antes de prosseguir.");
     }
 
-    private static bool EstaDentro(string caminho, string raiz)
+    internal static bool EstaDentro(string caminho, string raiz)
     {
         var relativo = Path.GetRelativePath(raiz, caminho);
         return !Path.IsPathRooted(relativo)
@@ -360,7 +373,7 @@ public static class ServicoQuarentenaM7
             && !relativo.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 
-    private static void VerificarCaminhoSeguro(string caminho, bool arquivo)
+    internal static void VerificarCaminhoSeguro(string caminho, bool arquivo)
     {
         var completo = Path.GetFullPath(caminho);
         if (arquivo)

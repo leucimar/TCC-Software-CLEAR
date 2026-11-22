@@ -43,7 +43,8 @@ public sealed class ClassificadorArquivos
     /// </summary>
     public static ClassificadorArquivos CriarComFiltrosSelecionados(
         bool identificarVazios, bool identificarTemporarios,
-        int? diasSemAcesso, DateTimeOffset referencia)
+        int? diasSemAcesso, DateTimeOffset referencia,
+        CriterioTemporal criterio = CriterioTemporal.UltimoAcesso)
     {
         var regras = new List<IRegraClassificacao>();
         if (identificarVazios)
@@ -51,7 +52,7 @@ public sealed class ClassificadorArquivos
         if (identificarTemporarios)
             regras.Add(new RegraNomeTemporarioBackup());
         if (diasSemAcesso is int dias)
-            regras.Add(new RegraSinalTemporal(dias, referencia));
+            regras.Add(new RegraSinalTemporal(dias, referencia, criterio));
         return new ClassificadorArquivos(regras);
     }
 

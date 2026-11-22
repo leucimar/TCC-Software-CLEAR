@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -233,12 +233,8 @@ public static class CriadorSubBaseExperimental
         string? hashCalculado = null;
         try
         {
-            await using (var fonte = new FileStream(origem, new FileStreamOptions
-            {
-                Mode = FileMode.Open, Access = FileAccess.Read, Share = FileShare.Read,
-                Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
-                BufferSize = 131072
-            }))
+            await using (var fonte = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(
+                origem, FileShare.Read, 131072))
             await using (var alvo = new FileStream(temporario, new FileStreamOptions
             {
                 Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
@@ -279,8 +275,7 @@ public static class CriadorSubBaseExperimental
             }
 
             var hash = hashCalculado ?? throw new IOException("Hash não calculado.");
-            await using (var validar = new FileStream(temporario, FileMode.Open,
-                FileAccess.Read, FileShare.Read))
+            await using (var validar = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(temporario))
             {
                 if (validar.Length != esperado.TamanhoBytes)
                     throw new IOException("Cópia ficou com tamanho divergente.");

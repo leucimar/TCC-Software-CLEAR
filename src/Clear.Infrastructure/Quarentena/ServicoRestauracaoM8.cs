@@ -95,7 +95,13 @@ public static class ServicoRestauracaoM8
             // Sem fallback de sobrescrita, renomeação, criação de diretórios ou cópia.
             if (File.Exists(plano.CaminhoOriginal) || Directory.Exists(plano.CaminhoOriginal))
                 throw new IOException("Conflito: o caminho original está ocupado.");
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("A restauração com preservação de segurança requer Windows.");
+            var permissoes = PreservacaoPermissoesQuarentena.PrepararRestauracao(
+                plano.CaminhoQuarentena, plano.CaminhoOriginal);
+            permissoes.ValidarAntesDaMovimentacao();
             File.Move(plano.CaminhoQuarentena, plano.CaminhoOriginal, overwrite: false);
+            permissoes.ValidarDepoisDaMovimentacao();
 
             var fim = DateTimeOffset.UtcNow;
             var gravados = await AtualizarEstadoAsync(conexao, plano.IdOperacao,
@@ -179,13 +185,8 @@ public static class ServicoRestauracaoM8
         // Share.Read | Share.Delete: permite leitura mas bloqueia escrita normal
         // durante a conferência. Há janela TOCTOU entre esta leitura e File.Move.
         var antesUtc = info.LastWriteTimeUtc;
-        await using var fluxo = new FileStream(fonte, new FileStreamOptions
-        {
-            Mode = FileMode.Open, Access = FileAccess.Read,
-            Share = FileShare.Read | FileShare.Delete,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan,
-            BufferSize = 65536
-        });
+        await using var fluxo = Clear.Infrastructure.Arquivos.SessaoPreservacaoAcesso.Abrir(
+            fonte, FileShare.Read | FileShare.Delete);
         if (fluxo.Length != plano.TamanhoBytes)
             throw new IOException("Tamanho alterado durante verificação.");
         var hash = Convert.ToHexString(
@@ -194,6 +195,17 @@ public static class ServicoRestauracaoM8
         if (!info.Exists || info.Length != plano.TamanhoBytes
             || info.LastWriteTimeUtc != antesUtc || hash != plano.Sha256Hex)
             throw new IOException("SHA-256 ou metadados da quarentena divergentes; restauração bloqueada.");
+    }
+
+    public static (string Origem, string Destino) ConsultarRaizes(
+        RegistroQuarentenaM7 registro, string raizAnalise)
+    {
+        var plano = new PlanoRestauracaoM8(registro.IdOperacao, registro.IdExecucao,
+            registro.CaminhoDestino, registro.CaminhoOriginal, registro.TamanhoBytes,
+            registro.Sha256Hex, registro.RaizAnalisada, registro.Estrutura);
+        var origem = ObterRaizQuarentena(plano, Path.GetFullPath(plano.CaminhoQuarentena),
+            Path.GetFullPath(plano.CaminhoOriginal));
+        return (origem, Path.GetFullPath(registro.RaizAnalisada ?? raizAnalise));
     }
 
     private static string ObterRaizQuarentena(PlanoRestauracaoM8 plano,

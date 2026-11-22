@@ -1,4 +1,4 @@
-# CLEAR — TCC
+# CLEARv2.0 — TCC
 
 Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assistido** de arquivos antes de futuras migrações para a nuvem. **O CLEAR não realiza migração para a nuvem.** Inventário, classificação, relatórios e histórico são somente leitura; o M7 e o M8 podem movimentar arquivos individualmente, **apenas após confirmação humana explícita**.
 
@@ -12,19 +12,26 @@ Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assisti
 - M3: classificação de arquivos vazios, backups/temporários e sinais temporais; verificações independentes de compatibilidade para Azure Files SMB/Windows ou SharePoint Online/OneDrive empresarial; limite de tamanho personalizado;
 - M4: detecção opt-in de duplicatas exatas por tamanho, SHA-256 em streaming e comparação byte a byte;
 - M5 Parte 1: exportação CSV completa (com filtros de achados), resumo JSON e CSV de membros de grupos M4;
-- **M6 (integrado à develop):** histórico SQLite opcional e transacional, armazenando entradas, evidências, parâmetros, ocorrências e grupos confirmados, com consulta detalhada paginada na interface;
+- **M6 (integrado à develop):** histórico SQLite automático e transacional, armazenando entradas, evidências, parâmetros, ocorrências e grupos confirmados, com consulta detalhada paginada na interface;
 - **M7 (integrado à develop):** quarentena individual mediante confirmação humana, validação SHA-256 e auditoria SQLite;
 - **M8 (integrado à develop):** restauração individual de um arquivo auditado como EmQuarentena, com confirmação humana adicional, SHA-256, proteção contra sobrescrita e estados RestauracaoPendente / Restaurado;
 - **M9 Parte 1 (integrada à develop):** concorrência limitada (1–8) no SHA-256 de M4, métricas observacionais e benchmark sintético com resultados JSON;
 - **M9 Parte 2 (feature em validação):** checkpoints opcionais de progresso para **reinício integral assistido**, sem reutilização de resultados, e limite defensivo configurável de arquivos indexados na deduplicação.
 
+## Compatibilidade de destino (M3-3B-3)
+
+Selecione um perfil em **Objetivo Esperado**. Para SharePoint, preencha **Biblioteca do SharePoint** com o caminho decodificado do site e da biblioteca, por exemplo `sites/Equipe/Documentos`, sem o domínio. A **Subpasta de destino** é opcional nos dois perfis e fica em branco quando o acervo vai para a raiz da biblioteca ou do compartilhamento. O CLEAR soma o destino projetado e o caminho relativo do item. SharePoint sem biblioteca informa **Não avaliado** na regra de comprimento.
+
+- **Azure Files SMB.** O catálogo verifica nomes, caracteres inválidos, 255 caracteres por componente, 2.048 no caminho, 250 subpastas e 4 TiB por arquivo. Particularidades de ponto final e `U+E000` são alertas de FileREST.
+- **SharePoint Online.** O catálogo verifica nomes reservados, 400 caracteres no caminho decodificado e 250 GB por arquivo, conforme a leitura decimal do valor publicado. Tipos condicionados ao site ou ao cliente OneDrive aparecem como **alertas de compatibilidade**. Políticas específicas da organização exigem confirmação no ambiente de destino.
+
 ## Histórico SQLite (M6)
 
-Marque **Salvar histórico local SQLite (M6; não reutiliza classificações)** nos filtros gerais. O histórico é gravado em `%LOCALAPPDATA%\CLEAR\historico.sqlite3`, fora do acervo de testes `C:\Temp`. Os dados são escritos em uma transação por execução; interrupção/falha antes da conclusão causa rollback. Falhas individuais enumeradas que permitam concluir geram status **Parcial**, sem sinalizar análise integral.
+O CLEAR salva as análises em %LOCALAPPDATA%\CLEAR\historico.sqlite3. Análises concluídas ou parciais conservam suas entradas. Uma tentativa interrompida registra o estado e o motivo, com as entradas incompletas descartadas.
 
-A aba **Histórico SQLite — M6** permite atualizar e consultar resumos de execuções passadas, inclusive após fechar o programa. Selecione uma execução e clique **Consultar detalhes da execução** (ou dê duplo clique na linha) para ver seus arquivos e classificações em páginas de 200 itens, justificativas/evidências, verificações e membros dos grupos de duplicatas. Tudo é consultado no banco, sem reanalisar a pasta. Todos os registros de entradas são persistidos, mesmo além da amostra de 1.000 linhas. A exportação M5 continua opcional e pode ser usada ao mesmo tempo, sem uma nova varredura apenas para salvar os dados.
+Use o seletor **Análise exibida** para consultar o histórico. Ele mostra número sequencial, horário local e nome da pasta. O **Inventário** traz os arquivos, classificações, grupos de duplicatas, justificativas e ocorrências. As abas **Configurações da análise**, **Desempenho** e **Auditoria** acompanham a mesma análise. O painel superior abre expandido e se recolhe após a conclusão.
 
-**Importante:** o banco pode conter nomes, caminhos e hashes confidenciais. O SQLite **não criptografa os registros automaticamente**. O histórico ainda não é cache; o software **não reaproveita classificações ou hashes** de execuções anteriores. A otimização depende de estudo de invalidação e medições em M6 posterior/M9. A aba permite consulta histórica paginada, mas filtros de pesquisa avançada, edição de decisões e reutilização automática dos resultados ficam para outros incrementos.
+**Importante:** o banco pode conter nomes, caminhos e hashes confidenciais. O SQLite **não criptografa os registros automaticamente**. O histórico ainda não é cache; o software **não reaproveita classificações ou hashes** de execuções anteriores. A otimização depende de estudo de invalidação e medições em M6 posterior/M9. O Inventário usa consultas paginadas.
 
 ## Compilar e testar
 
@@ -39,17 +46,13 @@ Roteiros: `docs/tests/Roteiro_Validacao_M6_Parte1.md`, `docs/tests/Roteiro_Valid
 
 ## Quarentena M7 — somente com confirmação humana
 
-Na consulta detalhada de uma execução M6 concluída, selecione um arquivo e clique **Revisar envio à quarentena (M7)**. O CLEAR não move arquivos por conta própria: primeiro verifica metadados e SHA-256, apresenta origem e destino e exige resposta afirmativa explícita. Uma nova verificação antes de mover rejeita arquivos modificados desde a análise.
+No **Inventário**, selecione **No acervo**, aplique os filtros e marque os arquivos. Ao selecionar duplicatas em lote, o CLEAR mantém pelo menos uma cópia de cada grupo na origem. Para trocar a cópia preservada, desmarque primeiro outra cópia do grupo.
 
-O destino padrão é %LOCALAPPDATA%\CLEAR\Quarentena. Uma auditoria independente é mantida em %LOCALAPPDATA%\CLEAR\quarentena.sqlite3, com estados Pendente/EmQuarentena/Falha. A aba de auditoria permite consultar operações vinculadas à análise histórica.
+Clique em **Mover para quarentena** e confira a quantidade, a origem e o destino. Após sua confirmação, o serviço revalida os itens e preserva o controle de acesso NTFS. A quarentena deve ficar no mesmo volume do acervo e fora dele. O histórico de movimentos é salvo em %LOCALAPPDATA%\CLEAR\quarentena.sqlite3.
 
-**Atenção:** esta etapa muda a localização de arquivos quando autorizada. O M8 experimental permite restauração individual confirmada pelo usuário. **Use apenas dados sintéticos em C:\Temp enquanto validamos.** Nunca exclua manualmente arquivos de quarentena nem o banco de auditoria. Não há limpeza automática, exclusão, migração ou escolha automática de arquivos.
+## Restauração assistida
 
-## Restauração assistida M8 — sem sobrescrita
-
-Na aba Auditoria da quarentena (dentro da consulta histórica M6), selecione uma operação EmQuarentena e clique **Revisar restauração (M8)**. A preparação verifica o conteúdo com SHA-256 e se a pasta original ainda existe e está livre. Responder Não não altera o arquivo nem o status. Responder Sim provoca nova revalidação, grava RestauracaoPendente, move o arquivo de volta com overwrite=false e registra Restaurado ao concluir.
-
-Status Pendente do M7 e RestauracaoPendente do M8 são situações incertas: não repetir a ação automaticamente. O M8 não corrige caminhos ausentes, não sobrescreve nomes existentes e não restaura em lotes. O banco SQLite da auditoria M7 permanece no esquema v1, sem migrações destrutivas.
+No **Inventário**, selecione **Em quarentena**, marque os arquivos e clique em **Restaurar selecionados**. A confirmação agrupa a origem e o destino quando há mais de uma raiz no lote. A restauração revalida os arquivos por SHA-256 e recusa caminhos ocupados. Consulte o estado das operações ou exporte o CSV pela aba **Auditoria**.
 
 ## M9 — Robustez e medições reproduzíveis
 
@@ -79,16 +82,11 @@ Os manifestos resumo JSON e arquivos JSONL tornam a seleção reproduzível. A c
 
 Detalhes e riscos: docs/architecture/Marco_SubBase_Experimental_Estratificada.md e docs/tests/Roteiro_Validacao_SubBase_Experimental.md. **Novos testes ainda precisam ser executados no Windows antes de qualquer integração.** A seleção de pasta de quarentena, preservação física da hierarquia na quarentena e seleção parcial por filtros são outros incrementos.
 
-## Fluxo de quarentena e ETA — feature em validação (entrega consolidada)
+## Seleção e progresso
 
-- **Destinos visíveis antes de analisar:** quarentena sugerida no mesmo volume da origem e pasta de relatórios em LOCALAPPDATA/CLEAR/Relatorios, ambos personalizáveis. O envio à quarentena exige histórico M6 e confirmação humana, mesmo para arquivo individual.
-- **Hierarquia física da quarentena:** M7 armazena em Quarentena / GUID / caminho relativo completo; M8 valida a estrutura e mantém suporte à disposição legada Quarentena / GUID / nome. Auditoria SQLite existente preservada.
-- **Filtro + seleção parcial:** na consulta detalhada M6, abra Filtrar e selecionar para quarentena. Filtros por classificação, nome/extensão, tamanho, datas, incompatibilidades e duplicatas. Seleção identificada por ID entre páginas; o filtro não seleciona automaticamente. Somente arquivos marcados explicitamente são elegíveis a movimentação, mediante confirmação separada e revalidação individual SHA-256. Operações bem-sucedidas de um lote não são revertidas se outro arquivo falhar.
-- **Progresso/ETA observacional:** sub-base (quantidade + bytes), inventário/classificação (pré-contagem de arquivos), fase SHA-256 e quarentena em lote (quantidade + bytes). Prazos variam conforme cache, antivírus, formatos e tamanho dos arquivos; relatórios finais e confirmação SQLite ainda não têm ETA.
-- **Regras de segurança:** sem mover, excluir ou reescrever arquivos sem confirmação; quarentena mantém exigência de mesmo volume. Testar SOMENTE em dados sintéticos, em C:\Temp. Nunca mandar o acervo original público à quarentena.
+- Os filtros do Inventário podem ser usados no acervo e na quarentena. A seleção permanece ao mudar de página ou aplicar filtros. O contador informa quando há arquivos marcados fora dos filtros. Trocar a análise ou alternar entre acervo e quarentena limpa as marcações.
+- A aba Desempenho apresenta indicadores, gráfico por etapa e uma tabela de medições exportável em CSV. O histórico conserva os horários em UTC e a interface apresenta o horário local.
 
-Documentação: docs/architecture/Marco_M10_Fluxo_Quarentena_Selecao_ETA.md. Validação conjunta: docs/tests/Roteiro_Validacao_M10_Entrega_Consolidada.md.
+## Versões
 
-## Estado
-
-M0–M9 Parte 2 integrados à main e à develop (árvores de arquivos equivalentes na última sincronização). Na Parte 2, o usuário informou 210/210 testes aprovados; permanece o aviso MSTEST0037 e a validação manual do cancelamento/reinício integral. A sub-base experimental está apenas em feature/subbase-experimental-estratificada, com 14 testes adicionais propostos (total esperado 224), ainda sem execução local registrada. Não fazer merge automático.
+O CLEARv2.0 está em validação na branch CLEARv2.0-Refactory-Layout e na develop. A branch CLEARv1.0 preserva a versão anterior.

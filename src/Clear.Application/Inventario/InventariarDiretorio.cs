@@ -94,6 +94,7 @@ public sealed class ResultadoInventario
     public bool ApenasSemIncompatibilidadeDetectada =>
         ConfiguracaoCompatibilidade.HaVerificacoesHabilitadas &&
         AvaliacoesExecutadas > 0 && AvaliacoesNaoAvaliadas == 0 &&
+        !ContagensVerificacoes.Any(x => x.Estado == EstadoVerificacao.Alerta) &&
         ItensComIncompatibilidade == 0 && TotalOcorrencias == 0;
     public bool AmostraDiretoriosLimitada => QuantidadeDiretorios > AmostraDiretorios.Count;
     public bool AmostraLimitada => QuantidadeArquivos > AmostraArquivos.Count;
@@ -152,7 +153,7 @@ public sealed class InventariarDiretorio
         var amostraDiretorios = new List<EntradaInventariada>(Math.Min(_limiteAmostra, 1000));
         long quantidadeDiretorios = 0;
         var contagens = new Dictionary<CategoriaAnalise, long>();
-        var avaliador = new AvaliadorCompatibilidade(_configuracaoCompatibilidade);
+        var avaliador = new AvaliadorCompatibilidade(_configuracaoCompatibilidade, diretorioRaiz);
         var contagensVerificacoes = new Dictionary<(string, EstadoVerificacao), long>();
         var amostraAvaliacoes = new List<AvaliacaoEntrada>(Math.Min(_limiteAmostra, 1000));
         long itensComIncompatibilidade = 0;

@@ -128,17 +128,17 @@ public sealed class RegrasCompatibilidadeM3BTests
     }
 
     [TestMethod]
-    public void SharePointRespeitaLimiteBinarioDe250GiB()
+    public void SharePointRespeitaLimiteDecimalDe250GB()
     {
         var avaliador = SpoCom(Spo);
         var limite = AvaliadorCompatibilidade.LimiteSharePointBytes;
-        Assert.AreEqual(268435456000L, limite);
+        Assert.AreEqual(250_000_000_000L, limite);
         Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada,
             Estado(avaliador, Arquivo("a.txt", limite), "SPO-TAM-001"));
         Assert.AreEqual(EstadoVerificacao.IncompatibilidadeDocumentada,
             Estado(avaliador, Arquivo("a.txt", limite + 1), "SPO-TAM-001"));
         Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada,
-            Estado(avaliador, Arquivo("a.txt", 250000000000L), "SPO-TAM-001"));
+            Estado(avaliador, Arquivo("a.txt", limite - 1), "SPO-TAM-001"));
     }
 
     [TestMethod]
@@ -164,7 +164,7 @@ public sealed class RegrasCompatibilidadeM3BTests
     public void NenhumaRegraLigadaNaoSignificaCompatibilidadeGarantida()
     {
         var resultados = SpoCom().Avaliar(Arquivo("nome?.txt"));
-        Assert.HasCount(5, resultados);
+        Assert.HasCount(9, resultados);
         Assert.IsTrue(resultados.All(x => x.Estado == EstadoVerificacao.Desabilitada));
         var resumo = new ResumoVerificacoes(resultados);
         Assert.IsFalse(resumo.AlgumaVerificacaoExecutada);
@@ -183,8 +183,8 @@ public sealed class RegrasCompatibilidadeM3BTests
     [TestMethod]
     public void CadaPerfilRecebeSomenteSuasRegras()
     {
-        Assert.HasCount(2, AzureCom(Azure).Avaliar(Arquivo("a.txt")));
-        Assert.HasCount(5, SpoCom(Spo).Avaliar(Arquivo("a.txt")));
+        Assert.HasCount(7, AzureCom(Azure).Avaliar(Arquivo("a.txt")));
+        Assert.HasCount(9, SpoCom(Spo).Avaliar(Arquivo("a.txt")));
         Assert.IsFalse(AzureCom(Azure).Avaliar(Arquivo("a.txt"))
             .Any(x => x.CodigoRegra.StartsWith("SPO-", StringComparison.Ordinal)));
     }
@@ -196,7 +196,7 @@ public sealed class RegrasCompatibilidadeM3BTests
             AvaliadorCompatibilidade.LimiteSharePointBytes + 1));
         var achado = resultado.Single(x => x.CodigoRegra == "SPO-TAM-001");
         StringAssert.Contains(achado.Justificativa, "F15");
-        StringAssert.Contains(achado.Justificativa, "268435456000");
+        StringAssert.Contains(achado.Justificativa, "250000000000");
         StringAssert.Contains(achado.Justificativa, "não certifica migração");
     }
 }
