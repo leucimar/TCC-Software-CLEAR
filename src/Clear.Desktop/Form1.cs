@@ -81,8 +81,10 @@ public partial class Form1 : Form
         { Text = "Azure Files — SMB/Windows", Dock = DockStyle.Fill };
     private readonly GroupBox _grupoSharePoint = new()
         { Text = "SharePoint Online / OneDrive empresarial", Dock = DockStyle.Fill };
+    private readonly Label _rotuloBibliotecaDestino = Legenda("Biblioteca do SharePoint");
     private readonly TextBox _caminhoBiblioteca = new()
         { PlaceholderText = "Ex.: sites/Equipe/Documentos", MaxLength = 400, AccessibleName = "Caminho da biblioteca" };
+    private readonly Label _rotuloSubpastaDestino = Legenda("Subpasta de destino (opcional)");
     private readonly TextBox _subpastaDestino = new()
         { PlaceholderText = "Em branco para a raiz", MaxLength = 2048, AccessibleName = "Subpasta no destino" };
     private readonly Dictionary<string, CheckBox> _checks = new(StringComparer.Ordinal);
@@ -201,6 +203,8 @@ public partial class Form1 : Form
         _tentarAdministrador.Enabled = pronto && !Administrador();
         _tentarAdministrador.Text = Administrador() ? "Executando como administrador" : "Tentar como administrador";
         _subtipo.Enabled = pronto && _sharePoint.Checked;
+        _rotuloBibliotecaDestino.Visible = _caminhoBiblioteca.Visible = _sharePoint.Checked;
+        _rotuloSubpastaDestino.Visible = _subpastaDestino.Visible = _azure.Checked || _sharePoint.Checked;
         _caminhoBiblioteca.Enabled = pronto && _sharePoint.Checked;
         _subpastaDestino.Enabled = pronto && (_azure.Checked || _sharePoint.Checked);
         _grupoAzure.Enabled = pronto && _azure.Checked;

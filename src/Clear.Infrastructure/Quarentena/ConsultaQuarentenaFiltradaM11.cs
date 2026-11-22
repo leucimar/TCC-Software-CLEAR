@@ -47,7 +47,7 @@ public static class ConsultaQuarentenaFiltradaM11
     /// anteriores. Lê a auditoria sem alterá-la; a UI não reoferece esses caminhos.
     /// </summary>
     public static async Task<IReadOnlySet<string>> CaminhosIndisponiveisAsync(
-        string banco, CancellationToken ct = default)
+        string banco, CancellationToken ct = default, string? execucao = null)
     {
         var caminhos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(banco) || !File.Exists(banco))
@@ -56,8 +56,14 @@ public static class ConsultaQuarentenaFiltradaM11
         await using var cmd = db.CreateCommand();
         cmd.CommandText = """
             SELECT DISTINCT original FROM movimentacoes
-            WHERE estado IN ('EmQuarentena', 'Pendente', 'RestauracaoPendente');
+            WHERE estado IN ('EmQuarentena', 'Pendente', 'RestauracaoPendente')
             """;
+        if (execucao is not null)
+        {
+            cmd.CommandText += " OR (estado = $excluido AND execucao_id = $exec);";
+            cmd.Parameters.AddWithValue("$excluido", ServicoQuarentenaM7.EstadoExcluidoPeloUsuario);
+            cmd.Parameters.AddWithValue("$exec", execucao);
+        }
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
             caminhos.Add(reader.GetString(0));

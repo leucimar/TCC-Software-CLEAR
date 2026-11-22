@@ -30,8 +30,13 @@ public partial class Form1
         _dicas.SetToolTip(_ativarDuplicatas, "Calcula SHA-256 e confirma a igualdade do conteúdo.");
         _grupoAzure.Text = "Regras do Azure Files";
         _grupoSharePoint.Text = "Regras do SharePoint";
+        _dicas.SetToolTip(_caminhoBiblioteca, "Informe o caminho decodificado do site e da biblioteca, sem o domínio. " +
+            "Sem esse caminho, o comprimento no SharePoint fica como Não avaliado.");
+        _dicas.SetToolTip(_subpastaDestino, "Informe somente a hierarquia abaixo da biblioteca ou do compartilhamento. " +
+            "Em branco representa a raiz.");
         secoes.Controls.Add(MontarSecao(new GroupBox { Text = "Objetivo Esperado:" },
-            _semDestino, _azure, _sharePoint), 0, 0);
+            _semDestino, _azure, _sharePoint, _rotuloBibliotecaDestino, _caminhoBiblioteca,
+            _rotuloSubpastaDestino, _subpastaDestino), 0, 0);
         secoes.Controls.Add(MontarSecao(new GroupBox { Text = "O que identificar" },
             ColunasCompactas([_identificarVazios, _identificarTemporarios, _ativarDuplicatas],
                 [_ativarSinalTemporal, CampoComComplemento(_criterioTemporal, _dias),

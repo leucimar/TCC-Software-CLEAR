@@ -74,9 +74,23 @@ public sealed class AvaliacaoCompatibilidadeInventarioTests
         Assert.AreEqual(0L, resultado.ItensComIncompatibilidade);
         Assert.AreEqual(0L, resultado.AvaliacoesExecutadas);
         Assert.IsFalse(resultado.ApenasSemIncompatibilidadeDetectada);
-        Assert.AreEqual(5L, resultado.ContagensVerificacoes
+        Assert.AreEqual(7L, resultado.ContagensVerificacoes
             .Where(x => x.Estado == EstadoVerificacao.Desabilitada)
             .Sum(x => x.Quantidade));
+    }
+
+    [TestMethod]
+    public async Task AdvertenciaDeTipoNaoContaComoIncompatibilidadeNemComoResultadoSemAlertas()
+    {
+        var configuracao = new ConfiguracaoCompatibilidade(
+            PerfilDestino.SharePointEmpresarial(SubtipoSharePoint.SharePointOnline), ["SPO-TIPO-001"]);
+        var resultado = await new InventariarDiretorio(
+            new FonteMista(EntradaInventariada.DeArquivo(new ArquivoInventariado(@"C:\Teste\dado.tmp", 10))),
+            configuracaoCompatibilidade: configuracao).ExecutarAsync(@"C:\Teste");
+
+        Assert.AreEqual(1L, Quantidade(resultado, "SPO-TIPO-001", EstadoVerificacao.Alerta));
+        Assert.AreEqual(0L, resultado.ItensComIncompatibilidade);
+        Assert.IsFalse(resultado.ApenasSemIncompatibilidadeDetectada);
     }
 
     [TestMethod]

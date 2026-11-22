@@ -90,7 +90,7 @@ public static class ConsultaEntradasFiltradasM10
             CultureInfo.InvariantCulture);
         await using var cmd = db.CreateCommand();
         cmd.CommandText = $"SELECT {Colunas} FROM entradas AS e WHERE " + condicoes +
-            " ORDER BY e.id LIMIT $lim OFFSET $offset";
+            " ORDER BY e.caminho, e.id LIMIT $lim OFFSET $offset";
         Parametros(cmd, execucao, filtro);
         cmd.Parameters.AddWithValue("$lim", ConsultaHistoricoSqliteM6.TamanhoPagina);
         cmd.Parameters.AddWithValue("$offset",

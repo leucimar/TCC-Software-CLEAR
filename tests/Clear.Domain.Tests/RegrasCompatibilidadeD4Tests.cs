@@ -90,4 +90,70 @@ public sealed class RegrasCompatibilidadeD4Tests
             Avaliar(new ConfiguracaoCompatibilidade(Azure, [regra], subpastaDestino: ""),
                 regra, Path.Combine("..", "documento.txt")).Estado);
     }
+
+    [TestMethod]
+    public void ProfundidadeAzureContaPastasDoDestinoMasNaoONomeDoArquivo()
+    {
+        const string codigo = "AZF-CAM-003";
+        var pastas = string.Join(Path.DirectorySeparatorChar, Enumerable.Repeat("p", 250));
+        var raiz = new ConfiguracaoCompatibilidade(Azure, [codigo], subpastaDestino: "");
+        var subpasta = new ConfiguracaoCompatibilidade(Azure, [codigo], subpastaDestino: "Lote");
+        var arquivo = Path.Combine(pastas, "dado.txt");
+        Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada, Avaliar(raiz, codigo, arquivo).Estado);
+        Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada, Avaliar(raiz, codigo, pastas, diretorio: true).Estado);
+        Assert.AreEqual(EstadoVerificacao.IncompatibilidadeDocumentada, Avaliar(subpasta, codigo, arquivo).Estado);
+        Assert.AreEqual(EstadoVerificacao.IncompatibilidadeDocumentada, Avaliar(subpasta, codigo, pastas, diretorio: true).Estado);
+        Assert.AreEqual(EstadoVerificacao.NaoAvaliado,
+            Avaliar(new ConfiguracaoCompatibilidade(Azure, [codigo]), codigo, "dado.txt").Estado);
+    }
+
+    [TestMethod]
+    public void AzureDetectaControlesESubstitutosIsoladosMasAceitaParesUnicode()
+    {
+        const string codigo = "AZF-NOME-001";
+        var config = new ConfiguracaoCompatibilidade(Azure, [codigo]);
+        foreach (var nome in new[] { "a\u0001.txt", "a\uD800.txt", "a\uDC00.txt" })
+            Assert.AreEqual(EstadoVerificacao.IncompatibilidadeDocumentada, Avaliar(config, codigo, nome).Estado);
+        foreach (var nome in new[] { "ação.txt", "a😀.txt", "a\uFFFE.txt", "a\uFFFF.txt" })
+            Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada, Avaliar(config, codigo, nome).Estado);
+    }
+
+    [TestMethod]
+    [DataRow("dado.txt.")]
+    [DataRow("dado\uE000.txt")]
+    public void ParticularidadesFileRestSaoAlertasCondicionais(string nome)
+    {
+        const string codigo = "AZF-NOME-003";
+        Assert.AreEqual(EstadoVerificacao.Alerta, Avaliar(new ConfiguracaoCompatibilidade(Azure, [codigo]), codigo, nome).Estado);
+    }
+
+    [TestMethod]
+    [DataRow("゛pasta", true)]
+    [DataRow("\u3099pasta", true)]
+    [DataRow("ဧpasta", true)]
+    [DataRow("౧pasta", false)]
+    public void PrefixoUnicodeSharePointAplicaAsFormasDocumentadasSomenteAPastas(string nome, bool vedado)
+    {
+        const string codigo = "SPO-NOME-005";
+        var config = new ConfiguracaoCompatibilidade(Spo, [codigo]);
+        Assert.AreEqual(vedado ? EstadoVerificacao.IncompatibilidadeDocumentada : EstadoVerificacao.SemIncompatibilidadeDetectada,
+            Avaliar(config, codigo, nome, diretorio: true).Estado);
+        Assert.AreEqual(EstadoVerificacao.SemIncompatibilidadeDetectada, Avaliar(config, codigo, nome + ".txt").Estado);
+    }
+
+    [TestMethod]
+    [DataRow("arquivo.ASPX", true)]
+    [DataRow("arquivo.TMP", true)]
+    [DataRow(".Ds_Store", true)]
+    [DataRow("desktop.ini", true)]
+    [DataRow("arquivo.pdf", false)]
+    [DataRow("arquivo.pst", false)]
+    public void TiposSharePointSinalizamCondicoesDoClienteOuSite(string nome, bool alerta)
+    {
+        const string codigo = "SPO-TIPO-001";
+        var config = new ConfiguracaoCompatibilidade(Spo, [codigo]);
+        Assert.AreEqual(alerta ? EstadoVerificacao.Alerta : EstadoVerificacao.SemIncompatibilidadeDetectada,
+            Avaliar(config, codigo, nome).Estado);
+        Assert.AreEqual(EstadoVerificacao.NaoAplicavel, Avaliar(config, codigo, nome, diretorio: true).Estado);
+    }
 }

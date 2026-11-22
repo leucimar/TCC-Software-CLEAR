@@ -26,7 +26,7 @@ public sealed record RegistroQuarentenaM7(
 /// pré-verificação de metadados/SHA-256 e auditoria persistente. Não exclui.
 /// Restauração e reconciliação de operações pendentes pertencem ao M8.
 /// </summary>
-public static class ServicoQuarentenaM7
+public static partial class ServicoQuarentenaM7
 {
     public const int VersaoEsquema = 2;
 
@@ -235,7 +235,7 @@ public static class ServicoQuarentenaM7
 
     public static async Task<IReadOnlyList<RegistroQuarentenaM7>> ConsultarAsync(
         string bancoAuditoria, string? idExecucao = null,
-        CancellationToken cancelamento = default, int pagina = 0)
+        CancellationToken cancelamento = default, int pagina = 0, string? estado = null)
     {
         if (pagina < 0) throw new ArgumentOutOfRangeException(nameof(pagina));
         if (!File.Exists(bancoAuditoria))
@@ -252,9 +252,11 @@ public static class ServicoQuarentenaM7
             SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem, criado_utc
             FROM movimentacoes
             WHERE ($execucao IS NULL OR execucao_id = $execucao)
+              AND ($estado IS NULL OR estado = $estado)
             ORDER BY criado_utc DESC, id LIMIT 200 OFFSET $offset;
             """;
         comando.Parameters.AddWithValue("$execucao", (object?)idExecucao ?? DBNull.Value);
+        comando.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
         comando.Parameters.AddWithValue("$offset", checked((long)pagina * 200));
         var itens = new List<RegistroQuarentenaM7>();
         await using var leitor = await comando.ExecuteReaderAsync(cancelamento).ConfigureAwait(false);
@@ -268,7 +270,7 @@ public static class ServicoQuarentenaM7
     }
 
     public static async Task<long> ContarAuditoriaAsync(string bancoAuditoria,
-        string idExecucao, CancellationToken ct = default)
+        string idExecucao, CancellationToken ct = default, string? estado = null)
     {
         if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
         if (!File.Exists(bancoAuditoria)) return 0;
@@ -278,15 +280,19 @@ public static class ServicoQuarentenaM7
         await conexao.OpenAsync(ct).ConfigureAwait(false);
         await ValidarVersaoAsync(conexao, ct).ConfigureAwait(false);
         await using var comando = conexao.CreateCommand();
-        comando.CommandText = "SELECT COUNT(*) FROM movimentacoes WHERE execucao_id = $exec";
+        comando.CommandText = """
+            SELECT COUNT(*) FROM movimentacoes
+            WHERE execucao_id = $exec AND ($estado IS NULL OR estado = $estado);
+            """;
         comando.Parameters.AddWithValue("$exec", idExecucao);
+        comando.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
         return Convert.ToInt64(await comando.ExecuteScalarAsync(ct).ConfigureAwait(false),
             CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Exporta toda a auditoria da execução em fluxo, sem o limite da página visual.</summary>
+    /// <summary>Exporta a auditoria da execução em fluxo, com filtro de estado opcional.</summary>
     public static async Task<long> ExportarAuditoriaCsvAsync(string bancoAuditoria,
-        string idExecucao, string destino, CancellationToken ct = default)
+        string idExecucao, string destino, CancellationToken ct = default, string? estado = null)
     {
         if (string.IsNullOrWhiteSpace(idExecucao)) throw new ArgumentException("Selecione uma execução.");
         ct.ThrowIfCancellationRequested();
@@ -304,9 +310,11 @@ public static class ServicoQuarentenaM7
             cmd.CommandText = """
                 SELECT id, estado, original, destino, tamanho, sha256, execucao_id, mensagem,
                        criado_utc FROM movimentacoes WHERE execucao_id = $exec
+                         AND ($estado IS NULL OR estado = $estado)
                 ORDER BY criado_utc, id;
                 """;
             cmd.Parameters.AddWithValue("$exec", idExecucao);
+            cmd.Parameters.AddWithValue("$estado", (object?)estado ?? DBNull.Value);
             long total = 0;
             await using (var leitor = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
             await using (var escritor = new StreamWriter(new FileStream(temporario,

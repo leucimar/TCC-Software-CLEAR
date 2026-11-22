@@ -130,7 +130,7 @@ public sealed class SessaoPreservacaoAcesso : IDisposable
         }
         const uint genericRead=0x80000000,writeAttributes=0x100;
         const uint flags=0x40000000|0x08000000|0x00200000; // overlapped, sequential, open reparse point itself
-        var handle=CreateFileW(caminho,genericRead|(preservar?writeAttributes:0),
+        var handle=CreateFileW(CaminhoParaAberturaWindows(caminho),genericRead|(preservar?writeAttributes:0),
             (uint)share,IntPtr.Zero,3,flags,IntPtr.Zero);
         if(handle.IsInvalid)
         {
@@ -154,6 +154,24 @@ public sealed class SessaoPreservacaoAcesso : IDisposable
             return new FileStream(handle,FileAccess.Read,buffer,true);
         }
         catch{handle.Dispose();throw;}
+    }
+
+    internal static string CaminhoParaAberturaWindows(string caminho)
+    {
+        const int maxPath = 260; // Inclui o terminador nulo.
+        const string prefixoEstendido = @"\\?\";
+        if (caminho.StartsWith(prefixoEstendido, StringComparison.Ordinal) ||
+            caminho.StartsWith(@"\\.\", StringComparison.Ordinal))
+            return caminho;
+
+        // O prefixo estendido desativa a normalização feita pelo Win32.
+        var absoluto = Path.GetFullPath(caminho);
+        if (absoluto.Length < maxPath)
+            return absoluto;
+
+        return absoluto.StartsWith(@"\\", StringComparison.Ordinal)
+            ? @"\\?\UNC\" + absoluto[2..]
+            : prefixoEstendido + absoluto;
     }
 
     public void Dispose()

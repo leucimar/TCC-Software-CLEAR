@@ -18,6 +18,13 @@ Aplicativo desktop gratuito C#/.NET 10 para **pré-análise e saneamento assisti
 - **M9 Parte 1 (integrada à develop):** concorrência limitada (1–8) no SHA-256 de M4, métricas observacionais e benchmark sintético com resultados JSON;
 - **M9 Parte 2 (feature em validação):** checkpoints opcionais de progresso para **reinício integral assistido**, sem reutilização de resultados, e limite defensivo configurável de arquivos indexados na deduplicação.
 
+## Compatibilidade de destino (M3-3B-3)
+
+Selecione um perfil em **Objetivo Esperado**. Para SharePoint, preencha **Biblioteca do SharePoint** com o caminho decodificado do site e da biblioteca, por exemplo `sites/Equipe/Documentos`, sem o domínio. A **Subpasta de destino** é opcional nos dois perfis e fica em branco quando o acervo vai para a raiz da biblioteca ou do compartilhamento. O CLEAR soma o destino projetado e o caminho relativo do item. SharePoint sem biblioteca informa **Não avaliado** na regra de comprimento.
+
+- **Azure Files SMB.** O catálogo verifica nomes, caracteres inválidos, 255 caracteres por componente, 2.048 no caminho, 250 subpastas e 4 TiB por arquivo. Particularidades de ponto final e `U+E000` são alertas de FileREST.
+- **SharePoint Online.** O catálogo verifica nomes reservados, 400 caracteres no caminho decodificado e 250 GB por arquivo, conforme a leitura decimal do valor publicado. Tipos condicionados ao site ou ao cliente OneDrive aparecem como **alertas de compatibilidade**. Políticas específicas da organização exigem confirmação no ambiente de destino.
+
 ## Histórico SQLite (M6)
 
 O CLEAR salva as análises em %LOCALAPPDATA%\CLEAR\historico.sqlite3. Análises concluídas ou parciais conservam suas entradas. Uma tentativa interrompida registra o estado e o motivo, com as entradas incompletas descartadas.

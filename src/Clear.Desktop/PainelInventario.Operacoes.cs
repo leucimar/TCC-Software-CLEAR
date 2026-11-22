@@ -5,6 +5,8 @@ namespace Clear.Desktop;
 
 internal sealed partial class PainelInventario
 {
+    private sealed record FalhaLote(EntradaHistoricaM6 Entrada, string Motivo, bool ConfirmarExclusao);
+
     private async Task SelecionarFiltradosAsync()
     {
         var execucao = _execucao!;
@@ -32,10 +34,9 @@ internal sealed partial class PainelInventario
         }
         else
         {
-            var plano = await Task.Run(() => ProtecaoDuplicatasNaQuarentena.PrepararAsync(
-                _historico, execucao.Id, elegiveis.Where(e => !_indisponiveis.Contains(e.Caminho)).ToArray(),
-                _indisponiveis));
-            AplicarPlano(plano);
+            var disponiveis = elegiveis.Where(e => !_indisponiveis.Contains(e.Caminho)).ToArray();
+            var (plano, ausentes) = await Task.Run(() => PlanejarEnvioAsync(execucao, disponiveis, _indisponiveis));
+            AplicarPlano(plano, ausentes);
         }
         await ContarForaDoFiltroAsync();
     }
@@ -52,7 +53,8 @@ internal sealed partial class PainelInventario
         {
             if (_marcados.Count >= LimiteLote)
                 throw new InvalidOperationException($"O lote aceita até {LimiteLote:N0} arquivos.");
-            if (!Restaurando && item.GrupoDuplicata is not null)
+            if (!Restaurando && item.GrupoDuplicata is not null &&
+                !ServicoQuarentenaM7.ArquivoAusenteEmRaizDisponivel(item.Caminho, _execucao!.DiretorioRaiz))
             {
                 var execucao = _execucao!;
                 var caminhos = _marcados.Values.Select(x => x.Caminho).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -71,10 +73,11 @@ internal sealed partial class PainelInventario
         await ContarForaDoFiltroAsync();
     }
 
-    private void AplicarPlano(SelecaoQuarentenaProtegida plano)
+    private void AplicarPlano(SelecaoQuarentenaProtegida plano, IReadOnlyList<EntradaHistoricaM6> ausentes)
     {
         LimparMarcacoes();
         foreach (var item in plano.Grupos.SelectMany(g => g.Entradas)) _marcados.Add(item.Id, item);
+        foreach (var item in ausentes) _marcados.Add(item.Id, item);
         foreach (var referencia in plano.ReferenciasUnicas)
             _mantidos.Add(referencia.Grupo, referencia.Caminho);
     }
@@ -128,22 +131,36 @@ internal sealed partial class PainelInventario
             await QuarentenarAsync(execucao);
     }
 
+    private async Task<(SelecaoQuarentenaProtegida Plano, EntradaHistoricaM6[] Ausentes)> PlanejarEnvioAsync(
+        ResumoExecucaoHistoricaM6 execucao, IReadOnlyList<EntradaHistoricaM6> marcados,
+        IReadOnlySet<string> bloqueados)
+    {
+        var ausentes = marcados.Where(e => ServicoQuarentenaM7.ArquivoAusenteEmRaizDisponivel(
+            e.Caminho, execucao.DiretorioRaiz)).ToArray();
+        var idsAusentes = ausentes.Select(e => e.Id).ToHashSet();
+        var presentes = marcados.Where(e => !idsAusentes.Contains(e.Id)).ToArray();
+        var plano = await ProtecaoDuplicatasNaQuarentena.PrepararAsync(_historico, execucao.Id,
+            presentes, bloqueados);
+        return (plano, ausentes);
+    }
+
     private async Task QuarentenarAsync(ResumoExecucaoHistoricaM6 execucao)
     {
         var destino = Path.GetFullPath(_raizQuarentena());
         var ids = _marcados.Keys.ToArray();
-        var plano = await Task.Run(async () =>
+        var (plano, ausentes) = await Task.Run(async () =>
         {
-            var bloqueados = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(_auditoria);
+            var bloqueados = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(
+                _auditoria, execucao: execucao.Id);
             var marcados = await ConsultaEntradasFiltradasM10.ConsultarSelecionadasAsync(
                 _historico, execucao.Id, ids);
             if (marcados.Any(e => bloqueados.Contains(e.Caminho)))
                 throw new IOException("Parte da seleção já está em quarentena. Recarregue o Inventário.");
-            return await ProtecaoDuplicatasNaQuarentena.PrepararAsync(_historico, execucao.Id,
-                marcados, bloqueados);
+            return await PlanejarEnvioAsync(execucao, marcados, bloqueados);
         });
         // A prévia só pode diminuir o conjunto marcado. O serviço verifica a cópia em disco.
-        if (plano.Grupos.Sum(g => g.Entradas.Count) != ids.Length) AplicarPlano(plano);
+        var qtdMovimentar = plano.Grupos.Sum(g => g.Entradas.Count);
+        if (qtdMovimentar != ids.Length) AplicarPlano(plano, ausentes);
         AtualizarMarcacoes();
         await ContarForaDoFiltroAsync();
         if (_marcados.Count == 0)
@@ -151,10 +168,18 @@ internal sealed partial class PainelInventario
             _mensagem = "Os arquivos marcados são as cópias que precisam ficar no acervo.";
             return;
         }
-        var rota = new RotaDeLote(execucao.DiretorioRaiz, destino, _marcados.Count);
-        if (!DialogoLote.Confirmar(this, false, [rota], _foraDoFiltro)) return;
+        if (qtdMovimentar > 0)
+        {
+            var rota = new RotaDeLote(execucao.DiretorioRaiz, destino, qtdMovimentar);
+            var idsAusentesVisiveis = await ConsultaEntradasFiltradasM10.ContarMarcadosVisiveisAsync(
+                _historico, execucao.Id, _filtro, ausentes.Select(e => e.Id).ToArray());
+            var foraDaPrevia = _foraDoFiltro - (ausentes.Length - idsAusentesVisiveis);
+            if (!DialogoLote.Confirmar(this, false, [rota], Math.Max(0, foraDaPrevia))) return;
+        }
         await AcompanharLoteAsync(_marcados.Count, async (token, registrar) =>
         {
+            foreach (var entrada in ausentes)
+                registrar(entrada, "Arquivo ausente no acervo.", true);
             foreach (var grupo in plano.Grupos)
             {
                 token.ThrowIfCancellationRequested();
@@ -167,7 +192,7 @@ internal sealed partial class PainelInventario
                 catch (Exception erro) when (erro is IOException or UnauthorizedAccessException)
                 {
                     foreach (var entrada in grupo.Entradas)
-                        registrar(entrada, erro.Message);
+                        registrar(entrada, erro.Message, AusenteNoAcervo(entrada, erro));
                     continue;
                 }
                 await using var fluxo = referencia;
@@ -179,13 +204,17 @@ internal sealed partial class PainelInventario
                         var movimento = await ProtecaoDuplicatasNaQuarentena.PrepararMovimentoAsync(
                             grupo, entrada, execucao, destino, token);
                         await ServicoQuarentenaM7.ExecutarAsync(movimento, true, _auditoria, token);
-                        registrar(entrada, null);
+                        registrar(entrada, null, false);
                     }
                     catch (Exception erro) when (erro is not OperationCanceledException)
-                    { registrar(entrada, erro.Message); }
+                    { registrar(entrada, erro.Message, AusenteNoAcervo(entrada, erro)); }
                 }
             }
-        });
+        }, entrada => ServicoQuarentenaM7.RegistrarExclusaoNaOrigemAsync(
+            entrada, execucao, _auditoria, confirmado: true));
+
+        bool AusenteNoAcervo(EntradaHistoricaM6 entrada, Exception erro) => erro is IOException &&
+            ServicoQuarentenaM7.ArquivoAusenteEmRaizDisponivel(entrada.Caminho, execucao.DiretorioRaiz);
     }
 
     private async Task RestaurarAsync(ResumoExecucaoHistoricaM6 execucao)
@@ -198,7 +227,9 @@ internal sealed partial class PainelInventario
             .ToDictionary(r => r.CaminhoOriginal, StringComparer.OrdinalIgnoreCase);
         if (ativos.Count != ids.Count)
             throw new InvalidOperationException("Parte da seleção já saiu da quarentena. Recarregue o Inventário.");
-        var rotas = ativos.Values.Select(r => ServicoRestauracaoM8.ConsultarRaizes(r, execucao.DiretorioRaiz))
+        var raizes = ativos.Values.ToDictionary(r => r.IdOperacao,
+            r => ServicoRestauracaoM8.ConsultarRaizes(r, execucao.DiretorioRaiz));
+        var rotas = raizes.Values
             .GroupBy(r => r.Origem, StringComparer.OrdinalIgnoreCase)
             .SelectMany(origens => origens.GroupBy(r => r.Destino, StringComparer.OrdinalIgnoreCase)
                 .Select(destinos => new RotaDeLote(origens.Key, destinos.Key, destinos.Count()))).ToArray();
@@ -208,54 +239,99 @@ internal sealed partial class PainelInventario
             foreach (var entrada in marcados)
             {
                 token.ThrowIfCancellationRequested();
+                var registro = ativos[entrada.Caminho];
                 try
                 {
                     var movimento = await ServicoRestauracaoM8.PrepararAsync(
-                        ativos[entrada.Caminho].IdOperacao, _auditoria, token);
+                        registro.IdOperacao, _auditoria, token);
                     await ServicoRestauracaoM8.RestaurarAsync(movimento, true, _auditoria, token);
-                    registrar(entrada, null);
+                    registrar(entrada, null, false);
                 }
                 catch (Exception erro) when (erro is not OperationCanceledException)
-                { registrar(entrada, erro.Message); }
+                {
+                    var ausente = erro is IOException && ServicoQuarentenaM7.ArquivoAusenteEmRaizDisponivel(
+                        registro.CaminhoDestino, raizes[registro.IdOperacao].Origem);
+                    registrar(entrada, erro.Message, ausente);
+                }
             }
-        });
+        }, entrada => ServicoQuarentenaM7.RegistrarExclusaoNaQuarentenaAsync(
+            ativos[entrada.Caminho], execucao.DiretorioRaiz, _auditoria, confirmado: true));
     }
 
     private async Task AcompanharLoteAsync(int total,
-        Func<CancellationToken, Action<EntradaHistoricaM6, string?>, Task> executar)
+        Func<CancellationToken, Action<EntradaHistoricaM6, string?, bool>, Task> executar,
+        Func<EntradaHistoricaM6, Task> registrarExclusao)
     {
         using var cancelamento = new CancellationTokenSource();
         _lote = cancelamento;
         AtualizarBotoes();
-        var erros = new List<string>();
+        var falhas = new List<FalhaLote>();
         int sucessos = 0;
         _estado.Text = $"Processando 0 de {total:N0} arquivos…";
         try
         {
-            await executar(cancelamento.Token, (entrada, erro) =>
+            await executar(cancelamento.Token, (entrada, erro, ausenciaConfirmada) =>
             {
                 if (erro is null)
                 {
                     sucessos++;
                     _marcados.Remove(entrada.Id);
                 }
-                else erros.Add(entrada.Caminho + Environment.NewLine + erro);
-                _estado.Text = $"Processados: {sucessos + erros.Count:N0}/{total:N0} · " +
-                    $"Concluídos: {sucessos:N0} · Falhas: {erros.Count:N0}";
+                else falhas.Add(new(entrada, erro, ausenciaConfirmada));
+                _estado.Text = $"Processados: {sucessos + falhas.Count:N0}/{total:N0} · " +
+                    $"Concluídos: {sucessos:N0} · Falhas: {falhas.Count:N0}";
             });
         }
         catch (OperationCanceledException) when (cancelamento.IsCancellationRequested) { }
         finally
         {
             _lote = null;
+            _mensagem = $"{(cancelamento.IsCancellationRequested ? "Lote interrompido" : "Lote encerrado")} · " +
+                $"Concluídos: {sucessos:N0} · Falhas: {falhas.Count:N0}";
+            await RevisarArquivosAusentesAsync(falhas, registrarExclusao);
             await ConsultarAsync(_pagina);
             AuditoriaAlterada?.Invoke(this, EventArgs.Empty);
         }
-        _mensagem = $"{(cancelamento.IsCancellationRequested ? "Lote interrompido" : "Lote encerrado")} · " +
-            $"Concluídos: {sucessos:N0} · Falhas: {erros.Count:N0}";
-        if (erros.Count == 0) return;
-        MessageBox.Show(this, _mensagem + Environment.NewLine + Environment.NewLine +
-            "Primeira falha:" + Environment.NewLine + erros[0],
-            "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    private async Task RevisarArquivosAusentesAsync(IReadOnlyList<FalhaLote> falhas,
+        Func<EntradaHistoricaM6, Task> registrarExclusao)
+    {
+        if (falhas.Count == 0) return;
+        var primeiro = falhas[0];
+        var texto = _mensagem + Environment.NewLine + Environment.NewLine + "Primeira falha:" +
+            Environment.NewLine + primeiro.Entrada.Caminho + Environment.NewLine + primeiro.Motivo;
+        var ausentes = falhas.Where(f => f.ConfirmarExclusao).ToArray();
+        if (ausentes.Length == 0)
+        {
+            MessageBox.Show(this, texto, "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var primeiraAusencia = Path.GetFileName(ausentes[0].Entrada.Caminho);
+        var lista = ausentes.Length == 1 ? primeiraAusencia :
+            $"{primeiraAusencia} e mais {ausentes.Length - 1:N0} arquivo(s) ausente(s)";
+        var resposta = MessageBox.Show(this, texto + Environment.NewLine + Environment.NewLine +
+            $"Registrar {ausentes.Length:N0} arquivo(s) ausente(s) como Excluído pelo usuário?" +
+            Environment.NewLine + lista + Environment.NewLine +
+            "A confirmação atualiza somente a auditoria do CLEAR.",
+            "CLEAR", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        if (resposta != DialogResult.Yes) return;
+
+        int registrados = 0;
+        string? primeiraFalha = null;
+        foreach (var ausente in ausentes)
+        {
+            try
+            {
+                await registrarExclusao(ausente.Entrada);
+                _marcados.Remove(ausente.Entrada.Id);
+                registrados++;
+            }
+            catch (Exception erro) { primeiraFalha ??= erro.Message; }
+        }
+        _mensagem += $" · Exclusões registradas: {registrados:N0}";
+        if (primeiraFalha is not null)
+            MessageBox.Show(this, $"Registros pendentes: {ausentes.Length - registrados:N0}." +
+                Environment.NewLine + primeiraFalha, "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 }
