@@ -32,11 +32,11 @@ internal sealed partial class PainelInventario : UserControl
     private readonly Button _selecionarPagina = Botao("Selecionar página");
     private readonly Button _selecionarTudo = Botao("Selecionar filtrados (até 10.000)");
     private readonly Button _limpar = Botao("Limpar seleção");
-    private readonly Button _operacao = Botao("Mover para quarentena");
+    private readonly BotaoLote _operacao = new() { Text = "Mover para quarentena", AutoSize = true };
     private readonly Button _cancelar = Botao("Cancelar lote");
     private readonly Button _anterior = Botao("Anterior");
     private readonly Button _proxima = Botao("Próxima");
-    private readonly Button _abrirDetalhes = Botao("Detalhes do item ▾");
+    private readonly Button _abrirDetalhes = Botao("Detalhes do arquivo ▾");
     private readonly Label _estado = new() { AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
     private readonly TextBox _detalhes = new()
     {
@@ -59,7 +59,7 @@ internal sealed partial class PainelInventario : UserControl
     private IReadOnlySet<string> _indisponiveis = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<EntradaHistoricaM6> _itens = [];
     private ResumoExecucaoHistoricaM6? _execucao;
-    private FiltrosEntradasM10 _filtro = new(IncluirDiretorios: true);
+    private FiltrosEntradasM10 _filtro = new();
     private CancellationTokenSource? _lote;
     private long _total;
     private int _pagina;
@@ -106,7 +106,6 @@ internal sealed partial class PainelInventario : UserControl
             Campo(_usarMaximo, _maximo), _datas, _aplicar);
         _periodo = Faixa(Campo("Acessado desde", _desde), Campo("Acessado até", _ate));
         _acoes = Faixa(_selecionarPagina, _selecionarTudo, _limpar, _operacao, _cancelar);
-        _operacao.Tag = "primary";
         _cancelar.Visible = false;
         var painelDetalhes = new Panel { Dock = DockStyle.Fill, Height = 112, Visible = false };
         painelDetalhes.Controls.Add(_detalhes);
@@ -135,7 +134,7 @@ internal sealed partial class PainelInventario : UserControl
         _abrirDetalhes.Click += (_, _) =>
         {
             painelDetalhes.Visible = !painelDetalhes.Visible;
-            _abrirDetalhes.Text = painelDetalhes.Visible ? "Detalhes do item ▴" : "Detalhes do item ▾";
+            _abrirDetalhes.Text = painelDetalhes.Visible ? "Detalhes do arquivo ▴" : "Detalhes do arquivo ▾";
             ExibirDetalhes();
         };
         _visualizacao.SelectedIndexChanged += async (_, _) => await OperarAsync(() => ConsultarAsync(0));
@@ -223,8 +222,7 @@ internal sealed partial class PainelInventario : UserControl
             ApenasSemAlertas: codigo == "SemAlertas",
             ApenasComAlertas: codigo == "ComAlertas",
             FusoHorarioAcesso: TimeZoneInfo.Local,
-            GrupoDuplicata: codigo == "DuplicataExata" && _grupo.Value > 0 ? (long)_grupo.Value : null,
-            IncluirDiretorios: true);
+            GrupoDuplicata: codigo == "DuplicataExata" && _grupo.Value > 0 ? (long)_grupo.Value : null);
     }
 
     private async Task ConsultarAsync(int pagina)
@@ -255,7 +253,7 @@ internal sealed partial class PainelInventario : UserControl
             var mapa = quarentena.GroupBy(r => r.CaminhoOriginal, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
             var bloqueados = restaurando ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(_auditoria);
+                : await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(_auditoria, execucao: execucao.Id);
             var incluidos = restaurando ? mapa.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase) : null;
             var resultado = await ConsultaEntradasFiltradasM10.ConsultarAsync(
                 _historico, execucao.Id, _filtro, _pagina, caminhosIndisponiveis: bloqueados,
@@ -286,7 +284,7 @@ internal sealed partial class PainelInventario : UserControl
     {
         var colunas = new List<(string, int)>
         {
-            ("Marcar", 58), ("Arquivo ou pasta", 420), ("Bytes", 105), ("Classificação", 275)
+            ("Marcar", 58), ("Arquivo", 420), ("Bytes", 105), ("Classificação", 275)
         };
         if (_filtro.ApenasDuplicatas) colunas.Add(("Grupo", 76));
         colunas.Add(("Último acesso (horário local)", 218));
@@ -333,7 +331,7 @@ internal sealed partial class PainelInventario : UserControl
         if (!_detalhes.Visible) return;
         if (_grade.CurrentRow?.Tag is not EntradaHistoricaM6 item)
         {
-            _detalhes.Text = "Selecione um arquivo ou uma pasta.";
+            _detalhes.Text = "Selecione um arquivo.";
             return;
         }
         _detalhes.Text = item.Caminho + Environment.NewLine + Classificacoes(item) +
@@ -387,7 +385,8 @@ internal sealed partial class PainelInventario : UserControl
         if (_lote is null)
             _estado.Text = _execucao is null ? "Selecione uma análise ou inicie uma nova."
                 : Ocorrencias ? $"{_total:N0} ocorrência(s) · Página {_pagina + 1:N0}" :
-                $"{_total:N0} resultado(s) · Página {_pagina + 1:N0} · Marcados: {_marcados.Count:N0}" +
+                $"{_total:N0} arquivo(s) · Página {_pagina + 1:N0} de {Math.Max(1, (_total + TamanhoPagina - 1) / TamanhoPagina):N0}" +
+                $" · Marcados: {_marcados.Count:N0}" +
                 (_foraDoFiltro > 0 ? $" ({_foraDoFiltro:N0} fora dos filtros)" : "") +
                 (_mantidos.Count > 0 ? $" · Cópias mantidas no acervo: {_mantidos.Count:N0}" : "");
         if (!string.IsNullOrWhiteSpace(_mensagem) && _lote is null) _estado.Text += " · " + _mensagem;
@@ -426,5 +425,24 @@ internal sealed partial class PainelInventario : UserControl
         painel.Controls.Add(rotulo);
         painel.Controls.Add(controle);
         return painel;
+    }
+}
+
+internal sealed class BotaoLote : Button
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Enabled)
+        {
+            base.OnPaint(e);
+            return;
+        }
+
+        // O desenho padrão do Windows substitui a cor do texto de botões desabilitados.
+        using var fundo = new SolidBrush(BackColor);
+        e.Graphics.FillRectangle(fundo, ClientRectangle);
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
     }
 }

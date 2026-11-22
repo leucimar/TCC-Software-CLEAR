@@ -58,6 +58,37 @@ public sealed class ConsultaEntradasFiltradasM10Tests
     }
 
     [TestMethod]
+    public async Task ConsultaPadraoPaginaTodosOsArquivosEmOrdemDeCaminhoInclusiveClassificados()
+    {
+        using var c = new Cenario();
+        var tamanhoPagina = ConsultaHistoricoSqliteM6.TamanhoPagina;
+        var pastaPaginacao = Path.Combine(c.Origem, "10_Paginacao");
+        var pastaBackups = Path.Combine(c.Origem, "05_Backups");
+        var backup = Path.Combine(pastaBackups, "relatorio.bak");
+        var data = new DateTimeOffset(2025, 4, 15, 0, 0, 0, TimeSpan.Zero);
+        var entradas = Enumerable.Range(0, tamanhoPagina)
+            .Select(i => EntradaInventariada.DeArquivo(new ArquivoInventariado(
+                Path.Combine(pastaPaginacao, $"arquivo_{i:000}.csv"), 10, data, data)))
+            .Prepend(EntradaInventariada.DeDiretorio(pastaPaginacao))
+            .Append(EntradaInventariada.DeDiretorio(pastaBackups))
+            .Append(EntradaInventariada.DeArquivo(new ArquivoInventariado(backup, 10, data, data)));
+        var id = await c.PersistirAsync(entradas.ToArray());
+        var primeira = await ConsultaEntradasFiltradasM10.ConsultarAsync(c.Banco, id, new(), 0);
+        var segunda = await ConsultaEntradasFiltradasM10.ConsultarAsync(c.Banco, id, new(), 1);
+        var backups = await ConsultaEntradasFiltradasM10.ConsultarAsync(
+            c.Banco, id, new(Categoria: "CopiaBackupOuTemporario"), 0);
+        var arquivos = primeira.Entradas.Concat(segunda.Entradas).ToArray();
+
+        Assert.AreEqual(tamanhoPagina + 1L, primeira.Total);
+        Assert.HasCount(tamanhoPagina, primeira.Entradas);
+        Assert.HasCount(1, segunda.Entradas);
+        Assert.AreEqual(backup, primeira.Entradas[0].Caminho);
+        Assert.HasCount(tamanhoPagina + 1, arquivos.Select(e => e.Caminho).Distinct().ToArray());
+        Assert.IsTrue(arquivos.All(e => e.Tipo == "Arquivo"));
+        Assert.AreEqual(backup, backups.Entradas.Single().Caminho);
+    }
+
+    [TestMethod]
     public async Task ConsultaPorIdNuncaRetornaRegistroDeOutraExecucao()
     {
         using var c = new Cenario();
@@ -189,7 +220,7 @@ public sealed class ConsultaEntradasFiltradasM10Tests
             Banco = Path.Combine(_base, "Saida", "historico.sqlite3");
         }
 
-        public async Task<string> CriarHistoricoAsync(int adicionais = 0)
+        public Task<string> CriarHistoricoAsync(int adicionais = 0)
         {
             var data = new DateTimeOffset(2025, 4, 15, 0, 0, 0, TimeSpan.Zero);
             var entradas = new[]
@@ -202,6 +233,11 @@ public sealed class ConsultaEntradasFiltradasM10Tests
                 .Select(i => new ArquivoInventariado(
                     Path.Combine(Origem, $"extra{i:000}.txt"), 10, data, data)))
                 .Select(EntradaInventariada.DeArquivo).ToArray();
+            return PersistirAsync(entradas);
+        }
+
+        public async Task<string> PersistirAsync(EntradaInventariada[] entradas)
+        {
             await using var sessao = await SessaoHistoricoSqliteM6.IniciarAsync(
                 Origem, Banco, ParametrosHistoricoM6.SemFiltros);
             var resumo = await new InventariarDiretorio(new Fonte(entradas),

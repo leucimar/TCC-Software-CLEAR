@@ -93,15 +93,19 @@ public partial class Form1
         {
             var rotulo = definicao.Codigo switch
             {
-                "AZF-NOME-001" or "SPO-NOME-001" => "Sinais proibidos",
+                "AZF-NOME-001" => "Caracteres inválidos",
+                "SPO-NOME-001" => "Sinais proibidos",
                 "AZF-NOME-002" => "Nomes reservados",
+                "AZF-NOME-003" => "Alertas FileREST",
                 "AZF-TAM-001" => "Limite de 4 TiB",
                 "AZF-CAM-001" => "Caminho (2.048)",
                 "AZF-CAM-002" => "Item: 255 car.",
+                "AZF-CAM-003" => "Até 250 subpastas",
                 "SPO-NOME-005" => "Nomes reservados",
                 "SPO-NOME-006" => "Forms na raiz",
                 "SPO-CAM-001" => "Caminho: 400 car.",
-                "SPO-TAM-001" => "Limite de 250 GiB",
+                "SPO-TAM-001" => "Limite de 250 GB",
+                "SPO-TIPO-001" => "Alertas de tipo",
                 _ => definicao.Rotulo
             };
             var opcao = new CheckBox { Text = rotulo, AutoSize = true };

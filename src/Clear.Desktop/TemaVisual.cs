@@ -11,6 +11,31 @@ internal static class TemaVisual
     public static bool Escuro { get; private set; } = LerPreferencia();
     private static readonly Font Fonte = new("Segoe UI", 10);
 
+    internal sealed record Paleta(
+        Color Fundo, Color Superficie, Color LinhaAlternada, Color Borda, Color Texto,
+        Color Cabecalho, Color TextoCabecalho, Color CabecalhoGrade, Color TextoCabecalhoGrade,
+        Color Destaque, Color TextoDestaque, Color Selecao, Color TextoSelecao);
+
+    private static readonly Paleta Clara = new(
+        Fundo: Cor("#F4F5F7"), Superficie: Color.White, LinhaAlternada: Cor("#F7F8FA"),
+        Borda: Cor("#C9CED7"), Texto: Cor("#202530"),
+        Cabecalho: Color.White, TextoCabecalho: Cor("#214089"),
+        CabecalhoGrade: Cor("#EDF0F4"), TextoCabecalhoGrade: Cor("#242B38"),
+        Destaque: Cor("#1E50C5"), TextoDestaque: Color.White,
+        Selecao: Cor("#DEEAFF"), TextoSelecao: Cor("#173C89"));
+
+    private static readonly Paleta Escura = new(
+        Fundo: Cor("#191A1D"), Superficie: Cor("#222327"), LinhaAlternada: Cor("#292A2E"),
+        Borda: Cor("#434750"), Texto: Cor("#F2F3F5"),
+        Cabecalho: Cor("#222327"), TextoCabecalho: Cor("#C6D7FF"),
+        CabecalhoGrade: Cor("#2E3137"), TextoCabecalhoGrade: Cor("#F2F3F5"),
+        Destaque: Cor("#82AAFF"), TextoDestaque: Cor("#111D34"),
+        Selecao: Cor("#293E61"), TextoSelecao: Cor("#EFF4FF"));
+
+    internal static Paleta Cores => Escuro ? Escura : Clara;
+
+    private static Color Cor(string hexadecimal) => ColorTranslator.FromHtml(hexadecimal);
+
     private static bool LerPreferencia()
     {
         try { return File.Exists(Preferencias) &&
@@ -49,42 +74,43 @@ internal static class TemaVisual
 
     public static void Aplicar(Control controle)
     {
-        var fundo = Escuro ? Color.FromArgb(20, 29, 43) : Color.FromArgb(235, 240, 246);
-        var superficie = Escuro ? Color.FromArgb(29, 41, 58) : Color.White;
-        var texto = Escuro ? Color.FromArgb(226, 234, 244) : Color.FromArgb(29, 45, 65);
-        var borda = Escuro ? Color.FromArgb(57, 76, 99) : Color.FromArgb(202, 213, 225);
-        var acento = Color.FromArgb(15, 118, 128);
+        var cores = Cores;
         controle.BackColor = controle is TextBoxBase or ListBox or ComboBox or NumericUpDown
-            or TabPage ? superficie : fundo;
-        controle.ForeColor = texto;
+            or TabPage ? cores.Superficie : cores.Fundo;
+        controle.ForeColor = cores.Texto;
         if (controle.Tag as string == "header")
-        { controle.BackColor = Color.FromArgb(20, 42, 65); controle.ForeColor = Color.White; }
+        {
+            controle.BackColor = cores.Cabecalho;
+            controle.ForeColor = cores.TextoCabecalho;
+        }
         if (controle is Button botao)
         {
+            var acaoDeLote = botao is BotaoLote;
+            var principal = acaoDeLote || botao.Tag as string == "primary";
             botao.FlatStyle = FlatStyle.Flat;
-            botao.FlatAppearance.BorderColor = borda;
+            botao.FlatAppearance.BorderColor = principal ? cores.Destaque : cores.Borda;
             botao.Padding = new Padding(10, 4, 10, 4);
             botao.MinimumSize = new Size(0, 34);
             botao.UseVisualStyleBackColor = false;
-            botao.BackColor = botao.Tag as string == "primary" ? acento : superficie;
-            if (botao.Tag as string == "primary") botao.ForeColor = Color.White;
+            botao.BackColor = principal ? cores.Destaque : cores.Superficie;
+            botao.ForeColor = acaoDeLote ? Color.White : principal ? cores.TextoDestaque : cores.Texto;
         }
         if (controle is DataGridView grade)
         {
-            grade.BackgroundColor = superficie;
+            grade.BackgroundColor = cores.Superficie;
             grade.BorderStyle = BorderStyle.None;
-            grade.GridColor = borda;
+            grade.GridColor = cores.Borda;
             grade.EnableHeadersVisualStyles = false;
-            grade.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(20, 42, 65);
-            grade.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-            grade.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(20, 42, 65);
+            grade.ColumnHeadersDefaultCellStyle.BackColor = cores.CabecalhoGrade;
+            grade.ColumnHeadersDefaultCellStyle.ForeColor = cores.TextoCabecalhoGrade;
+            grade.ColumnHeadersDefaultCellStyle.SelectionBackColor = cores.CabecalhoGrade;
+            grade.ColumnHeadersDefaultCellStyle.SelectionForeColor = cores.TextoCabecalhoGrade;
             grade.ColumnHeadersHeight = 38;
-            grade.DefaultCellStyle.BackColor = superficie;
-            grade.DefaultCellStyle.ForeColor = texto;
-            grade.DefaultCellStyle.SelectionBackColor = acento;
-            grade.DefaultCellStyle.SelectionForeColor = Color.White;
-            grade.AlternatingRowsDefaultCellStyle.BackColor = Escuro
-                ? Color.FromArgb(34, 48, 66) : Color.FromArgb(244, 247, 250);
+            grade.DefaultCellStyle.BackColor = cores.Superficie;
+            grade.DefaultCellStyle.ForeColor = cores.Texto;
+            grade.DefaultCellStyle.SelectionBackColor = cores.Selecao;
+            grade.DefaultCellStyle.SelectionForeColor = cores.TextoSelecao;
+            grade.AlternatingRowsDefaultCellStyle.BackColor = cores.LinhaAlternada;
             grade.RowTemplate.Height = 32;
         }
         foreach (Control filho in controle.Controls) Aplicar(filho);

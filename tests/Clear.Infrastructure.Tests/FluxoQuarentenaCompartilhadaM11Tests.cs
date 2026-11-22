@@ -172,6 +172,68 @@ public sealed class FluxoQuarentenaCompartilhadaM11Tests
     }
 
     [TestMethod]
+    public async Task BaixaMantemAuditoriaEFiltraOsQuatroEstados()
+    {
+        using var c = new Cenario();
+        var apagado = await c.EnviarAsync("A/apagado.txt");
+        var paraRestaurar = await c.EnviarAsync("A/restaurar.txt");
+        var ativo = await c.EnviarAsync("B/ativo.txt");
+        var plano = await ServicoRestauracaoM8.PrepararAsync(paraRestaurar.IdOperacao, c.Banco);
+        await ServicoRestauracaoM8.RestaurarAsync(plano, true, c.Banco);
+        var ativos = await ConsultaQuarentenaFiltradaM11.ConsultarAtivasAsync(c.Banco, c.Execucao.Id);
+        var registro = ativos.Single(x => x.IdOperacao == apagado.IdOperacao);
+
+        await Assert.ThrowsExactlyAsync<IOException>(() => ServicoQuarentenaM7.RegistrarExclusaoNaQuarentenaAsync(
+            registro, c.Origem, c.Banco, confirmado: true));
+        File.Delete(apagado.CaminhoDestino);
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            ServicoQuarentenaM7.RegistrarExclusaoNaQuarentenaAsync(registro, c.Origem, c.Banco, confirmado: false));
+        Assert.AreEqual(2L, await ServicoQuarentenaM7.ContarAuditoriaAsync(c.Banco, c.Execucao.Id, estado: "EmQuarentena"));
+        await ServicoQuarentenaM7.RegistrarExclusaoNaQuarentenaAsync(registro, c.Origem, c.Banco, confirmado: true);
+
+        const string excluido = ServicoQuarentenaM7.EstadoExcluidoPeloUsuario;
+        var todos = await ServicoQuarentenaM7.ConsultarAsync(c.Banco, c.Execucao.Id);
+        Assert.HasCount(3, todos);
+        var baixado = (await ServicoQuarentenaM7.ConsultarAsync(c.Banco, c.Execucao.Id, estado: excluido)).Single();
+        Assert.AreEqual(apagado.IdOperacao, baixado.IdOperacao);
+        Assert.AreEqual(apagado.Sha256Hex, baixado.Sha256Hex);
+        StringAssert.Contains(baixado.Mensagem!, "Usuário confirmou");
+        Assert.AreEqual(ativo.IdOperacao,
+            (await ServicoQuarentenaM7.ConsultarAsync(c.Banco, c.Execucao.Id, estado: "EmQuarentena")).Single().IdOperacao);
+        Assert.AreEqual(paraRestaurar.IdOperacao,
+            (await ServicoQuarentenaM7.ConsultarAsync(c.Banco, c.Execucao.Id, estado: "Restaurado")).Single().IdOperacao);
+        Assert.AreEqual(1L, await ServicoQuarentenaM7.ContarAuditoriaAsync(c.Banco, c.Execucao.Id, estado: excluido));
+        Assert.HasCount(1, await ConsultaQuarentenaFiltradaM11.ConsultarAtivasAsync(c.Banco, c.Execucao.Id));
+        Assert.IsTrue(File.Exists(ativo.CaminhoDestino));
+    }
+
+    [TestMethod]
+    public async Task BaixaDaOrigemEhUnicaPorAnaliseEExportavelSemDestinoFicticio()
+    {
+        using var c = new Cenario();
+        var caminho = Path.Combine(c.Origem, "A", "apagado.txt");
+        var entrada = new EntradaHistoricaM6(1, "Arquivo", caminho, 3,
+            DateTimeOffset.UtcNow.ToString("O"), "[]", "[]", "[]", false);
+        await ServicoQuarentenaM7.RegistrarExclusaoNaOrigemAsync(entrada, c.Execucao, c.Banco, confirmado: true);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            ServicoQuarentenaM7.RegistrarExclusaoNaOrigemAsync(entrada, c.Execucao, c.Banco, confirmado: true));
+        var caminhos = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(c.Banco, execucao: c.Execucao.Id);
+        Assert.Contains(caminho, caminhos);
+        var deOutraAnalise = await ConsultaQuarentenaFiltradaM11.CaminhosIndisponiveisAsync(c.Banco, execucao: "outra");
+        Assert.DoesNotContain(caminho, deOutraAnalise);
+        var csv = Path.Combine(Path.GetDirectoryName(c.Banco)!, "auditoria.csv");
+        var total = await ServicoQuarentenaM7.ExportarAuditoriaCsvAsync(c.Banco, c.Execucao.Id, csv,
+            estado: ServicoQuarentenaM7.EstadoExcluidoPeloUsuario);
+        Assert.AreEqual(1L, total);
+        var baixado = (await ServicoQuarentenaM7.ConsultarAsync(c.Banco, c.Execucao.Id)).Single();
+        Assert.AreEqual("", baixado.CaminhoDestino);
+        Assert.AreEqual("", baixado.Sha256Hex);
+        StringAssert.Contains(await File.ReadAllTextAsync(csv), "ExcluidoPeloUsuario");
+        Directory.CreateDirectory(c.Quarentena);
+        Assert.AreEqual(0L, await LimpadorPastasVaziasM11.LimparAsync(c.Banco, c.Quarentena, true));
+    }
+
+    [TestMethod]
     public async Task LimpezaAuditadaRemovePastaAntigaJaVaziaSemApagarOutraPasta()
     {
         using var c = new Cenario();

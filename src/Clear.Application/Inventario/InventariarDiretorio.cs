@@ -94,6 +94,7 @@ public sealed class ResultadoInventario
     public bool ApenasSemIncompatibilidadeDetectada =>
         ConfiguracaoCompatibilidade.HaVerificacoesHabilitadas &&
         AvaliacoesExecutadas > 0 && AvaliacoesNaoAvaliadas == 0 &&
+        !ContagensVerificacoes.Any(x => x.Estado == EstadoVerificacao.Alerta) &&
         ItensComIncompatibilidade == 0 && TotalOcorrencias == 0;
     public bool AmostraDiretoriosLimitada => QuantidadeDiretorios > AmostraDiretorios.Count;
     public bool AmostraLimitada => QuantidadeArquivos > AmostraArquivos.Count;

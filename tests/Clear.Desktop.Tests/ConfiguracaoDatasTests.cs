@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using Clear.Desktop;
+using Clear.Domain.Compatibilidade;
 
 [assembly: DoNotParallelize]
 
@@ -47,6 +48,8 @@ public sealed class ConfiguracaoDatasTests
                 Campo<TextBox>(original,"_caminho").Text=@"D:\Acervo de teste";
                 Campo<TextBox>(original,"_pastaRelatorios").Text=@"D:\Relatorios";
                 Campo<RadioButton>(original,"_sharePoint").Checked=true;
+                Campo<TextBox>(original,"_caminhoBiblioteca").Text="sites/TCC/Documentos de teste";
+                Campo<TextBox>(original,"_subpastaDestino").Text="Acervo/2026";
                 Campo<ComboBox>(original,"_subtipo").SelectedIndex=1;
                 Campo<CheckBox>(original,"_ativarSinalTemporal").Checked=true;
                 Campo<ComboBox>(original,"_criterioTemporal").SelectedIndex=1;
@@ -69,6 +72,35 @@ public sealed class ConfiguracaoDatasTests
                 Assert.AreEqual(caminho,processo.ArgumentList[^1]);
             }
             finally{File.Delete(caminho);}
+        });
+    }
+
+    [TestMethod]
+    public async Task CamposDeDestinoAparecemNaTelaECompõemOPrefixoDaRegra()
+    {
+        await Sta(() =>
+        {
+            using var f = new Form1();
+            var biblioteca = Campo<TextBox>(f, "_caminhoBiblioteca");
+            var subpasta = Campo<TextBox>(f, "_subpastaDestino");
+            Assert.IsNotNull(biblioteca.Parent);
+            Assert.IsNotNull(subpasta.Parent);
+            Assert.IsFalse(biblioteca.Enabled);
+            Assert.IsFalse(subpasta.Enabled);
+
+            Campo<RadioButton>(f, "_sharePoint").Checked = true;
+            Assert.IsTrue(biblioteca.Enabled);
+            Assert.IsTrue(subpasta.Enabled);
+            Assert.IsNull(((ConfiguracaoCompatibilidade)Chamar(f, "CriarConfiguracaoDestino")!).PrefixoProjetado);
+            biblioteca.Text = "sites/TCC/Documentos de teste";
+            subpasta.Text = "Acervo/2026";
+            Assert.AreEqual("sites/TCC/Documentos de teste/Acervo/2026",
+                ((ConfiguracaoCompatibilidade)Chamar(f, "CriarConfiguracaoDestino")!).PrefixoProjetado);
+
+            Campo<RadioButton>(f, "_azure").Checked = true;
+            Assert.IsFalse(biblioteca.Enabled);
+            Assert.IsTrue(subpasta.Enabled);
+            Assert.AreEqual("Acervo/2026", ((ConfiguracaoCompatibilidade)Chamar(f, "CriarConfiguracaoDestino")!).PrefixoProjetado);
         });
     }
     [TestMethod]

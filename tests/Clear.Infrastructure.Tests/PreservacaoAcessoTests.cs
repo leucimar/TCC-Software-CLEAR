@@ -94,10 +94,21 @@ public sealed class PreservacaoAcessoTests
         Assert.AreEqual(4L,sessao.Resumo.LeiturasSemGarantia); // two hashes + both byte-comparison handles
     }
     [TestMethod]
-    public async Task WindowsNativoPreservaDatasNosHashesEComparacao()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task WindowsNativoPreservaDatasNosHashesEComparacao(bool caminhoLongo)
     {
         if(!OperatingSystem.IsWindows()) {Assert.Inconclusive("Requer API Windows.");return;}
-        var arquivos=new[]{Arquivo("a.txt"),Arquivo("b.txt")};
+        var nomeA = "a.txt";
+        var nomeB = "b.txt";
+        if (caminhoLongo)
+        {
+            var subpasta = Path.Combine(new string('a', 120), new string('b', 120));
+            Directory.CreateDirectory(Path.Combine(_raiz, subpasta));
+            nomeB = Path.Combine(subpasta, nomeB);
+            Assert.IsGreaterThanOrEqualTo(260, Path.Combine(_raiz, nomeB).Length);
+        }
+        var arquivos=new[]{Arquivo(nomeA),Arquivo(nomeB)};
         var acesso=new DateTime(2023,2,3,4,5,6,DateTimeKind.Utc);
         var modificacao=acesso.AddDays(1);
         foreach(var p in arquivos){File.SetLastAccessTimeUtc(p,acesso);File.SetLastWriteTimeUtc(p,modificacao);}
@@ -106,11 +117,28 @@ public sealed class PreservacaoAcessoTests
         {
             var resultado=await new DetectarDuplicatasExatas(new FonteInventarioSistemaArquivos(),
                 new LeitorConteudoDuplicatasSistemaArquivos(),leitores).ExecutarAsync(_raiz);
-            Assert.IsFalse(resultado.Incompleto);Assert.HasCount(1,resultado.Grupos);
+            Assert.IsFalse(resultado.Incompleto, string.Join(" | ", resultado.Ocorrencias.Select(x => x.Descricao)));
+            Assert.AreEqual(2L, resultado.ArquivosComHash);
+            Assert.HasCount(1,resultado.Grupos);
+            Assert.HasCount(2, resultado.Grupos[0].Arquivos);
         }
         foreach(var p in arquivos)
         {Assert.AreEqual(acesso,File.GetLastAccessTimeUtc(p));Assert.AreEqual(modificacao,File.GetLastWriteTimeUtc(p));}
         Assert.AreEqual(8L,sessao.Resumo.AberturasProtegidas);Assert.AreEqual(0L,sessao.Resumo.LeiturasSemGarantia);
+    }
+
+    [TestMethod]
+    public void WindowsConverteCaminhoUncLongoSemDuplicarPrefixo()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Inconclusive("Requer caminhos do Windows."); return; }
+        var sufixo = @"servidor\dados\" + new string('a', 130) + "\\" + new string('b', 130) + @"\dado.txt";
+        var longo = @"\\" + sufixo;
+        var esperado = @"\\?\UNC\" + sufixo;
+
+        Assert.AreEqual(esperado, SessaoPreservacaoAcesso.CaminhoParaAberturaWindows(longo));
+        Assert.AreEqual(esperado, SessaoPreservacaoAcesso.CaminhoParaAberturaWindows(esperado));
+        Assert.AreEqual(@"\\servidor\dados\dado.txt",
+            SessaoPreservacaoAcesso.CaminhoParaAberturaWindows(@"\\servidor\dados\dado.txt"));
     }
     [TestMethod]
     public async Task DiarioPersisteInicioAntesDaLeituraEResumoNaoSobrescreve()

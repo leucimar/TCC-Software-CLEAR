@@ -40,6 +40,11 @@ public partial class Form1
     private readonly Button _auditoriaProxima = PainelInventario.Botao("Próxima");
     private readonly Button _auditoriaExportar = PainelInventario.Botao("Exportar auditoria CSV");
     private readonly Button _auditoriaLimpar = PainelInventario.Botao("Limpar pastas vazias");
+    private readonly ComboBox _auditoriaFiltro = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Filtrar auditoria por estado",
+        Width = 175
+    };
     private PainelInventario _inventario = null!;
     private TabControl _abasResultados = null!;
     private bool _carregandoAnalises;
@@ -49,6 +54,13 @@ public partial class Form1
     private ResumoExecucaoHistoricaM6? AnaliseExibida => (_analises.SelectedItem as AnaliseNaLista)?.Dados;
     private static string BancoHistorico => SessaoHistoricoSqliteM6.CaminhoPadrao;
     private static string BancoAuditoria => ServicoQuarentenaM7.BancoAuditoriaPadrao;
+    private string? EstadoFiltradoAuditoria => _auditoriaFiltro.SelectedIndex switch
+    {
+        1 => "EmQuarentena",
+        2 => "Restaurado",
+        3 => ServicoQuarentenaM7.EstadoExcluidoPeloUsuario,
+        _ => null
+    };
 
     private Control MontarSeletorDeAnalise()
     {
@@ -92,12 +104,17 @@ public partial class Form1
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(PainelInventario.Faixa(_auditoriaExportar, _auditoriaLimpar), 0, 0);
+        _auditoriaFiltro.Items.AddRange(["Todos", "Em quarentena", "Restaurado", "Excluído pelo usuário"]);
+        _auditoriaFiltro.SelectedIndex = 0;
+        _auditoriaFiltro.SelectedIndexChanged += async (_, _) => await CarregarAuditoriaAsync(0);
+        layout.Controls.Add(PainelInventario.Faixa(
+            new Label { Text = "Estado", AutoSize = true, Margin = new Padding(4, 9, 3, 3) },
+            _auditoriaFiltro, _auditoriaExportar, _auditoriaLimpar), 0, 0);
         layout.Controls.Add(_auditoriaGrade, 0, 1);
         layout.Controls.Add(PainelInventario.Faixa(_auditoriaAnterior, _auditoriaProxima, _auditoriaEstado), 0, 2);
         foreach (var (titulo, largura) in new (string, int)[]
         {
-            ("Envio (horário local)", 221), ("Estado", 145), ("Caminho original", 350),
+            ("Registro (horário local)", 221), ("Estado", 178), ("Caminho original", 350),
             ("Caminho na quarentena", 350), ("Bytes", 95), ("Detalhe da auditoria", 335)
         })
             _auditoriaGrade.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = titulo, Width = largura });
@@ -188,6 +205,7 @@ public partial class Form1
         "Cancelada" => "Cancelada",
         "EmQuarentena" => "Em quarentena",
         "Restaurado" => "Restaurado",
+        ServicoQuarentenaM7.EstadoExcluidoPeloUsuario => "Excluído pelo usuário",
         "RestauracaoPendente" => "Restauração pendente",
         _ => estado
     };
@@ -377,8 +395,9 @@ public partial class Form1
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            using var trilho = new SolidBrush(TemaVisual.Escuro ? Color.FromArgb(54, 71, 87) : Color.FromArgb(210, 223, 234));
-            using var valor = new SolidBrush(TemaVisual.Escuro ? Color.FromArgb(71, 187, 199) : Color.FromArgb(15, 110, 121));
+            var cores = TemaVisual.Cores;
+            using var trilho = new SolidBrush(cores.CabecalhoGrade);
+            using var valor = new SolidBrush(cores.Destaque);
             e.Graphics.FillRectangle(trilho, ClientRectangle);
             var largura = (float)(ClientSize.Width * Math.Clamp(proporcao, 0, 1));
             e.Graphics.FillRectangle(valor, 0, 0, largura, ClientSize.Height);
@@ -391,24 +410,32 @@ public partial class Form1
         _auditando = true;
         AtualizarAcoesDaTela();
         _auditoriaAnterior.Enabled = _auditoriaProxima.Enabled = _auditoriaExportar.Enabled = _auditoriaLimpar.Enabled = false;
+        _auditoriaFiltro.Enabled = false;
         _auditoriaGrade.Rows.Clear();
         try
         {
             if (AnaliseExibida is not { } execucao) { _auditoriaEstado.Text = "Selecione uma análise."; return; }
             _paginaAuditada = Math.Max(0, pagina);
+            var estado = EstadoFiltradoAuditoria;
             var (registros, total) = await Task.Run(async () =>
-                (await ServicoQuarentenaM7.ConsultarAsync(BancoAuditoria, execucao.Id, pagina: _paginaAuditada),
-                 await ServicoQuarentenaM7.ContarAuditoriaAsync(BancoAuditoria, execucao.Id)));
+                (await ServicoQuarentenaM7.ConsultarAsync(BancoAuditoria, execucao.Id, pagina: _paginaAuditada, estado: estado),
+                 await ServicoQuarentenaM7.ContarAuditoriaAsync(BancoAuditoria, execucao.Id, estado: estado)));
             foreach (var r in registros)
                 _auditoriaGrade.Rows.Add(ApresentacaoResultados.HorarioLocal(r.CriadoUtc), EstadoLegivel(r.Estado),
                     r.CaminhoOriginal, r.CaminhoDestino, r.TamanhoBytes, r.Mensagem ?? "");
             _auditoriaEstado.Text = $"{total:N0} registro(s) · Página {_paginaAuditada + 1:N0}";
             _auditoriaAnterior.Enabled = _paginaAuditada > 0;
             _auditoriaProxima.Enabled = (_paginaAuditada + 1L) * 200 < total;
-            _auditoriaExportar.Enabled = _auditoriaLimpar.Enabled = total > 0;
+            _auditoriaExportar.Enabled = total > 0;
+            _auditoriaLimpar.Enabled = total > 0;
         }
         catch (Exception erro) { _auditoriaEstado.Text = "Auditoria indisponível. " + erro.Message; }
-        finally { _auditando = false; AtualizarAcoesDaTela(); }
+        finally
+        {
+            _auditando = false;
+            _auditoriaFiltro.Enabled = AnaliseExibida is not null;
+            AtualizarAcoesDaTela();
+        }
     }
 
     private static readonly Font FonteIndicador = new("Segoe UI", 13, FontStyle.Bold);
@@ -421,7 +448,8 @@ public partial class Form1
         if (arquivo.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            var total = await ServicoQuarentenaM7.ExportarAuditoriaCsvAsync(BancoAuditoria, execucao.Id, arquivo.FileName);
+            var total = await ServicoQuarentenaM7.ExportarAuditoriaCsvAsync(
+                BancoAuditoria, execucao.Id, arquivo.FileName, estado: EstadoFiltradoAuditoria);
             _auditoriaEstado.Text = $"{total:N0} registros exportados.";
         }
         catch (Exception erro) { MessageBox.Show(this, erro.Message, "CLEAR", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
